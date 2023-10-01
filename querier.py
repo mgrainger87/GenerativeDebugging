@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import List
 import openai
 import os
 import sys
@@ -25,16 +26,7 @@ class AIModelQuerier(ABC):
 		return []
 		
 	@abstractmethod
-	def generate_solution(self, problem_input):
-		"""
-		Generates a solution for the given problem definition.
-		
-		Subclasses should override this method to provide the logic for
-		generating solutions.
-		
-		:param problem_definition: The problem definition for which to generate a solution.
-		:return: An LLMSolution object containing the generated solution.
-		"""
+	def get_output(self, input):
 		pass
 	
 	@classmethod
@@ -50,36 +42,18 @@ class AIModelQuerier(ABC):
 		return instances
 	
 	@classmethod
-	def construct_textual_prompt(cls, llm_problem_input) -> str:
-		# Start with the textual prompt
-		prompt_text = llm_problem_input.prompt
-	
-		# Add function prototype if available
-		function_prototype = llm_problem_input.function_prototype
-		if function_prototype:
-			prompt_text += f"\n\nFunction Signature:\n{str(function_prototype)}"
-	
-		# Add sample inputs and outputs if available
-		sample_io = llm_problem_input.sample_inputs_outputs
-		if sample_io:
-			sample_io_text = '\n\nSample Inputs and Outputs:\n'
-			for i, test_case in enumerate(sample_io, start=1):
-				sample_io_text += f"\nTest Case {i}:\n{str(test_case)}"
-			prompt_text += sample_io_text
-	
-		# Add input code if available
-		input_code = llm_problem_input.input_code
-		if input_code:
-			prompt_text += f"\n\nInput Code:\n{input_code}"
-	
-		return prompt_text
+	def initial_prompt(cls):
+		return "Act as a human who is debugging a process that sometimes crashes. You will do this with the lldb debugger. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. If you would like, you can provide some commands before execution, or say \"run\" to begin."
+		
+	def handle_debugger_output(cls, output):
+		return self.get_output(output)
 
 	def __str__(self) -> str:
 		return f"{self.__class__.__name__}(model_identifier={self.model_identifier})"
 
 class HumanAIModelQuerier(AIModelQuerier):	
-	def generate_solution(self, problem_input):
-		prompt = AIModelQuerier.construct_textual_prompt(problem_input)
+	def get_output(self, input):
+		prompt = input
 		print("*** Human querier in use. Copy and paste the prompt below and provide it to the LLM. Provide the response, followed by an EOF character (ctrl-D).")
 		print("*** PROMPT BEGIN")
 		print(prompt)
@@ -99,7 +73,7 @@ class HumanAIModelQuerier(AIModelQuerier):
 		response = "".join(lines)
 
 		
-		return LLMSolution(problem_input.problem_id, self.model_identifier, problem_input.prompt_id, response)
+		return response
 
 class OpenAIModelQuerier(AIModelQuerier):
 	@classmethod
@@ -115,24 +89,24 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def is_chat_based_model(self):
 		return "gpt-3.5" in self.model_identifier or "gpt-4" in self.model_identifier
 	
-	def extract_code(self, response: str) -> str:
-		# Try to find the last Python code block
-		python_blocks = re.findall(r'``` ?python\n(.*?)\n```', response, re.DOTALL)
-		if python_blocks:
-			return python_blocks[-1].strip()
-		
-		# If no Python code block is found, try to find the last generic code block
-		generic_blocks = re.findall(r'``` ?\n(.*?)\n```', response, re.DOTALL)
-		if generic_blocks:
-			return generic_blocks[-1].strip()
-		
-		return response
+	# def extract_code(self, response: str) -> str:
+	# 	# Try to find the last Python code block
+	# 	python_blocks = re.findall(r'``` ?python\n(.*?)\n```', response, re.DOTALL)
+	# 	if python_blocks:
+	# 		return python_blocks[-1].strip()
+	# 	
+	# 	# If no Python code block is found, try to find the last generic code block
+	# 	generic_blocks = re.findall(r'``` ?\n(.*?)\n```', response, re.DOTALL)
+	# 	if generic_blocks:
+	# 		return generic_blocks[-1].strip()
+	# 	
+	# 	return response
 
-	def generate_solution(self, problem_input):
+	def get_output(self, input):
 		prompt = AIModelQuerier.construct_textual_prompt(problem_input)
 		
 		# Add additional instructions for automated prompting
-		prompt += "\n\nAfter analyzing the problem, provide your solution in a Markdown code block. Do not include tests in the Markdown code block. The last Markdown code block in your response will be directly executed for testing."
+		# prompt += "\n\nAfter analyzing the problem, provide your solution in a Markdown code block. Do not include tests in the Markdown code block. The last Markdown code block in your response will be directly executed for testing."
 		
 		print(f"***Prompt:\n{prompt}")
 
@@ -158,7 +132,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 			response = response.choices[0].text
 
 		print(f"***Response:\n{response}")
-		solution = self.extract_code(response)
+		# solution = self.extract_code(response)
+		return response
 		
 		# print(f"***Extracted solution:\n{solution}")
 		# return LLMSolution(problem_input.problem_id, self.model_identifier, problem_input.prompt_id, solution)
