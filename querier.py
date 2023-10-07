@@ -43,7 +43,7 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nIssue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\n"
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nIssue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
@@ -98,19 +98,21 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def is_chat_based_model(self):
 		return "gpt-3.5" in self.model_identifier or "gpt-4" in self.model_identifier
 	
-	def extract_code(self, response: str) -> str:
+	def extract_code_and_type(self, response: str) -> tuple:
 		# Try to find the last code block with any keyword after the ticks or without any keyword
-		blocks = re.findall(r'``` ?(\w*)\n(.*?)\n```', response, re.DOTALL)
+		blocks = re.findall(r'``` *\s*(\w*)\n(.*?)\n```', response, re.DOTALL)
 		if blocks:
+			code_type, code_content = blocks[-1]
 			# Removing any (lldb) prompt from the extracted command
-			return re.sub(r'^(?:\(lldb\)\s*)?', '', blocks[-1][1].strip())
+			code_content = re.sub(r'^(?:\(lldb\)\s*)?', '', code_content.strip())
+			return (code_type, code_content)
 		
 		# If no code blocks are found, look for lines starting with an optional (lldb) prompt followed by a command
 		command_lines = re.findall(r'^(?:\(lldb\)\s*)?(.*)$', response, re.MULTILINE)
 		if command_lines:
-			return command_lines[-1].strip()  # Return the last command line found
+			return ('', command_lines[-1].strip())  # Return the last command line found with no type
 		
-		return response
+		return ('', response)
 
 	def get_output(self, input):
 		prompt = input
@@ -144,9 +146,9 @@ class OpenAIModelQuerier(AIModelQuerier):
 			response = response.choices[0].text
 
 		print(f"***Response:\n{response}")
-		command = self.extract_code(response)
-		print(f"***Extracted command:\n{command}")
-		return command
+		type, code = self.extract_code_and_type(response)
+		print(f"***Extracted code of type {type}:\n{code}")
+		return type, code
 		
 		# print(f"***Extracted solution:\n{solution}")
 		# return LLMSolution(problem_input.problem_id, self.model_identifier, problem_input.prompt_id, solution)
