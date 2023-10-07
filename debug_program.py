@@ -10,13 +10,16 @@ class HandlerClass:
 	def on_stop(self, debug_session):
 		stop_info = self.get_stop_info(debug_session)
 		# Process the stop information or print it
-		print(stop_info)
+		# print(stop_info)
 		command = self.modelQuerier.get_output(stop_info)
 		while True:
-			command_output = debug_session.execute_command(command)
-			print(command_output)
+			success, command_output = debug_session.execute_command(command)
+			if not success:
+				print(f"Command execution failed: {command_output}")
+				break
+			# print(command_output)
 			command = self.modelQuerier.get_output(command_output)
-			print(command)
+			# print(command)
 		# success, output = debug_session.execute_command("bt")
 	
 	def get_stop_info(self, debug_session):
@@ -64,8 +67,7 @@ def main():
 	handler = HandlerClass(modelQuerier)
 
 	session = debugging.DebuggingSession(args.executable)
-	session.start(stop_handler=handler.on_stop, pause_at_start=True)
-	print(session)
+	session.start(stop_handler=handler.on_stop, pause_at_start=False)
 
 if __name__ == "__main__":
 	main()

@@ -43,7 +43,9 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is debugging a process that sometimes crashes. You will do this with the lldb debugger. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. If you would like, you can provide some commands before execution, or say \"run\" to begin."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nIssue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\n"
+		
+		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
 	def handle_debugger_output(cls, output):
 		return self.get_output(output)
@@ -86,25 +88,34 @@ class OpenAIModelQuerier(AIModelQuerier):
 			print("Warning: No OpenAI API key found in environment. Set the OPENAI_API_KEY environment variable.")
 			return []
 			
+	def __init__(self, model_identifier: str):
+		super().__init__(model_identifier)
+		initial_prompt = AIModelQuerier.initial_prompt()
+		print(f"*** Initial prompt: {initial_prompt}")
+		self.messages = [{"role": "user", "content": initial_prompt}]
+
+			
 	def is_chat_based_model(self):
 		return "gpt-3.5" in self.model_identifier or "gpt-4" in self.model_identifier
 	
-	# def extract_code(self, response: str) -> str:
-	# 	# Try to find the last Python code block
-	# 	python_blocks = re.findall(r'``` ?python\n(.*?)\n```', response, re.DOTALL)
-	# 	if python_blocks:
-	# 		return python_blocks[-1].strip()
-	# 	
-	# 	# If no Python code block is found, try to find the last generic code block
-	# 	generic_blocks = re.findall(r'``` ?\n(.*?)\n```', response, re.DOTALL)
-	# 	if generic_blocks:
-	# 		return generic_blocks[-1].strip()
-	# 	
-	# 	return response
+	def extract_code(self, response: str) -> str:
+		# Try to find the last code block with any keyword after the ticks or without any keyword
+		blocks = re.findall(r'``` ?(\w*)\n(.*?)\n```', response, re.DOTALL)
+		if blocks:
+			# Removing any (lldb) prompt from the extracted command
+			return re.sub(r'^(?:\(lldb\)\s*)?', '', blocks[-1][1].strip())
+		
+		# If no code blocks are found, look for lines starting with an optional (lldb) prompt followed by a command
+		command_lines = re.findall(r'^(?:\(lldb\)\s*)?(.*)$', response, re.MULTILINE)
+		if command_lines:
+			return command_lines[-1].strip()  # Return the last command line found
+		
+		return response
 
 	def get_output(self, input):
-		prompt = AIModelQuerier.construct_textual_prompt(problem_input)
-		
+		prompt = input
+		# prompt = AIModelQuerier.construct_textual_prompt(problem_input)
+		# 
 		# Add additional instructions for automated prompting
 		# prompt += "\n\nAfter analyzing the problem, provide your solution in a Markdown code block. Do not include tests in the Markdown code block. The last Markdown code block in your response will be directly executed for testing."
 		
@@ -112,13 +123,14 @@ class OpenAIModelQuerier(AIModelQuerier):
 
 		# Send the prompt to the OpenAI API
 		if self.is_chat_based_model():
-			messages = [{"role": "user", "content": prompt}]
+			self.messages.append({"role": "user", "content": prompt})
 			response = openai.ChatCompletion.create(
-				model="gpt-4",
+				model=self.model_identifier,
 				max_tokens=1000,
-				messages = messages)
+				messages = self.messages)
 			
 			# Extract the generated code
+			self.messages.append(response.choices[0].message)
 			response = response.choices[0].message.content
 			
 		else:		
@@ -132,8 +144,9 @@ class OpenAIModelQuerier(AIModelQuerier):
 			response = response.choices[0].text
 
 		print(f"***Response:\n{response}")
-		# solution = self.extract_code(response)
-		return response
+		command = self.extract_code(response)
+		print(f"***Extracted command:\n{command}")
+		return command
 		
 		# print(f"***Extracted solution:\n{solution}")
 		# return LLMSolution(problem_input.problem_id, self.model_identifier, problem_input.prompt_id, solution)
