@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import re
+import json
 
 class AIModelQuerier(ABC):
 	"""
@@ -43,7 +44,7 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nIssue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nUse the provided functions to issue lldb commands and make changes to the source code."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
@@ -114,36 +115,130 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 		return ('', response)
 
+	def get_functions(self):
+		return [
+			{
+				"name": "run_debugger_command",
+				"description": "Run a command using the lldb debugger.",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"cmd": {
+							"type": "string",
+							"description": "The command to run.",
+						},
+					},
+					"required": ["cmd"],
+				},
+			},
+			{
+				"name": "modify_code",
+				"description": "Modify the source code.",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"file_path": {
+							"type": "string",
+							"description": "The path of the file to modify as shown in the debugger output.",
+						},
+						"changes": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"from-file-range": {
+										"type": "object",
+										"properties": {
+											"start-line": {
+												"type": "integer"
+											},
+											"number-of-lines": {
+												"type": "integer"
+											},
+											"code": {
+												"type": "string"
+											}
+										}
+									},
+									"to-file-range": {
+										"type": "object",
+										"properties": {
+											"start-line": {
+												"type": "integer"
+											},
+											"number-of-lines": {
+												"type": "integer"
+											},
+											"code": {
+												"type": "string"
+											}
+										}
+									},
+
+								}
+								# "type":" object",
+								# "properties": {
+								# 	"from-file-range": {
+								# 		"type": "object",
+								# 		"properties": {
+								# 			"start-line": {
+								# 				"type": "integer"
+								# 			},
+								# 			"number-of-lines": {
+								# 				"type": "integer"
+								# 			}
+								# 		}
+								# 	},
+								# 	"to-file-range":  {
+								# 		"type": "object",
+								# 		"properties": {
+								# 			"start-line": {
+								# 				"type": "integer"
+								# 			},
+								# 			"number-of-lines": {
+								# 				"type": "integer"
+								# 			}
+								# 		}
+								# 	}
+								# }
+							}
+						}
+					},
+					"required": ["file_path", "changes"]
+				},
+			},
+		]
+
 	def get_output(self, input):
 		prompt = input
-		# prompt = AIModelQuerier.construct_textual_prompt(problem_input)
-		# 
-		# Add additional instructions for automated prompting
-		# prompt += "\n\nAfter analyzing the problem, provide your solution in a Markdown code block. Do not include tests in the Markdown code block. The last Markdown code block in your response will be directly executed for testing."
 		
 		print(f"***Prompt:\n{prompt}")
 
 		# Send the prompt to the OpenAI API
-		if self.is_chat_based_model():
-			self.messages.append({"role": "user", "content": prompt})
-			response = openai.ChatCompletion.create(
-				model=self.model_identifier,
-				max_tokens=1000,
-				messages = self.messages)
+		self.messages.append({"role": "user", "content": prompt})
+		response = openai.ChatCompletion.create(
+			model=self.model_identifier,
+			max_tokens=1000,
+			messages=self.messages,
+			functions = self.get_functions()
+		)
+		
+		# Extract the generated code
+		self.messages.append(response.choices[0].message)
+		print(response)
+		response_message = response.choices[0].message
+
+		if response_message.get("function_call"):
+			function_call = response_message["function_call"]
 			
-			# Extract the generated code
-			self.messages.append(response.choices[0].message)
-			response = response.choices[0].message.content
-			
-		else:		
-			response = openai.Completion.create(
-				engine=self.model_identifier,
-				prompt=prompt,
-				max_tokens=1000
-			)
-			
-			# Extract the generated code
-			response = response.choices[0].text
+			function_name = function_call["name"]
+			function_arguments = json.loads(function_call["arguments"])
+			if function_name == "run_debugger_command":
+				command = function_arguments["cmd"]
+				print(f"Returning command {command}")
+				return "lldb", command
+			elif function_name == "modify_code":
+				print(function_arguments)
 
 		print(f"***Response:\n{response}")
 		type, code = self.extract_code_and_type(response)
