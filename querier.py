@@ -6,6 +6,7 @@ import sys
 import subprocess
 import re
 import json
+import difflib
 
 class AIModelQuerier(ABC):
 	"""
@@ -152,9 +153,6 @@ class OpenAIModelQuerier(AIModelQuerier):
 											"start-line": {
 												"type": "integer"
 											},
-											"number-of-lines": {
-												"type": "integer"
-											},
 											"code": {
 												"type": "string"
 											}
@@ -166,9 +164,6 @@ class OpenAIModelQuerier(AIModelQuerier):
 											"start-line": {
 												"type": "integer"
 											},
-											"number-of-lines": {
-												"type": "integer"
-											},
 											"code": {
 												"type": "string"
 											}
@@ -176,40 +171,61 @@ class OpenAIModelQuerier(AIModelQuerier):
 									},
 
 								}
-								# "type":" object",
-								# "properties": {
-								# 	"from-file-range": {
-								# 		"type": "object",
-								# 		"properties": {
-								# 			"start-line": {
-								# 				"type": "integer"
-								# 			},
-								# 			"number-of-lines": {
-								# 				"type": "integer"
-								# 			}
-								# 		}
-								# 	},
-								# 	"to-file-range":  {
-								# 		"type": "object",
-								# 		"properties": {
-								# 			"start-line": {
-								# 				"type": "integer"
-								# 			},
-								# 			"number-of-lines": {
-								# 				"type": "integer"
-								# 			}
-								# 		}
-								# 	}
-								# }
 							}
 						}
 					},
 					"required": ["file_path", "changes"]
 				},
 			},
+			{
+				"name": "compile",
+				"description": "Compile the current version of the code.",
+				"parameters": {
+					"type": "object",
+					"properties": {}
+				}
+			},
+			{
+				"name": "restart",
+				"description": "Restart debugging from the beginning.",
+				"parameters": {
+					"type": "object",
+					"properties": {}
+				}
+			},
 		]
 
-	def get_output(self, input):
+	def generate_unified_diff(self, data, base_path):
+		file_path = data["file_path"]
+		diffs = []
+	
+		for change in data["changes"]:
+			from_code = change["from-file-range"]["code"].splitlines(keepends=True)
+			to_code = change["to-file-range"]["code"].splitlines(keepends=True)
+			
+			# Compute the correct start line for the unified diff using the provided start-line
+			start_line = change["from-file-range"]["start-line"] - 1
+			
+			# Add context lines to correctly position the diff
+			context_lines = ["\n" for _ in range(start_line)]
+			from_code = context_lines + from_code
+			to_code = context_lines + to_code
+	
+			# Generate unified diff using difflib without timestamps
+			diff = difflib.unified_diff(
+				from_code, 
+				to_code, 
+				fromfile=file_path, 
+				tofile=file_path, 
+				lineterm='',
+				n=0
+			)
+			
+			diffs.extend(diff)
+	
+		return "\n".join(diffs)
+
+	def get_output(self, input, base_path):
 		prompt = input
 		
 		print(f"***Prompt:\n{prompt}")
@@ -238,12 +254,16 @@ class OpenAIModelQuerier(AIModelQuerier):
 				print(f"Returning command {command}")
 				return "lldb", command
 			elif function_name == "modify_code":
-				print(function_arguments)
-
-		print(f"***Response:\n{response}")
-		type, code = self.extract_code_and_type(response)
-		print(f"***Extracted code of type {type}:\n{code}")
-		return type, code
+				diff = self.generate_unified_diff(function_arguments, base_path)
+				print(f"Returning diff {diff}")
+				return "diff", diff
+			else:
+				return function_name, None
+# 
+# 		print(f"***Response:\n{response}")
+# 		type, code = self.extract_code_and_type(response)
+# 		print(f"***Extracted code of type {type}:\n{code}")
+# 		return type, code
 		
 		# print(f"***Extracted solution:\n{solution}")
 		# return LLMSolution(problem_input.problem_id, self.model_identifier, problem_input.prompt_id, solution)

@@ -29,26 +29,32 @@ def execute_command(directory_path, command, *args):
 	:return: A tuple containing the return code, stdout, and stderr.
 	"""
 	full_command = [command] + list(args)
+	print(full_command)
 	
 	result = subprocess.run(full_command, cwd=directory_path, text=True, capture_output=True)
 	
 	return result.returncode, result.stdout, result.stderr
 
+import subprocess
+	
 def apply_patch_from_string(working_directory, patch_string):
-	try:
-		# Append EOF to the patch string
-		patch_string_with_eof = patch_string + '\x04'  # \x04 is the EOF marker in ASCII
-		
+	try:        
 		# Apply the patch using -p0, patch string is piped as input
-		process = subprocess.Popen(['patch', '-s', '-p0'], cwd=working_directory, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		_, error = process.communicate(input=patch_string_with_eof.encode())
-		
+		process = subprocess.Popen(['patch', '-s', '-p0', '--batch'], cwd=working_directory, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		stdout, stderr = process.communicate(input=patch_string.encode())
+
+		# Print stdout and stderr
+		if stdout:
+			print("STDOUT:", stdout.decode())
+		if stderr:
+			print("STDERR:", stderr.decode())
+
 		if process.returncode == 0:
 			# Patch applied successfully
 			return (True, None)
 		else:
 			# There was an error applying the patch
-			return (False, error.decode())
+			return (False, stderr.decode())
 	except Exception as e:
 		# There was an error running the subprocess
 		return (False, str(e))

@@ -6,15 +6,16 @@ import file_utilities
 import os
 
 class HandlerClass:
-	def __init__(self, modelQuerier, workingDirectory):
+	def __init__(self, modelQuerier, workingDirectory, compileCommand):
 		self.modelQuerier = modelQuerier
 		self.workingDirectory = workingDirectory
+		self.compileCommand = compileCommand
 	
 	def on_stop(self, debug_session):
 		stop_info = self.get_stop_info(debug_session)
 		# Process the stop information or print it
 		# print(stop_info)
-		type, code = self.modelQuerier.get_output(stop_info)
+		type, code = self.modelQuerier.get_output(stop_info, self.workingDirectory)
 		while True:
 			if type == "diff":
 				success, command_output = file_utilities.apply_patch_from_string(self.workingDirectory, code)
@@ -22,14 +23,18 @@ class HandlerClass:
 					command_output = f"The patch was applied."
 				else:
 					command_output = f"Applying the patch failed: {command_output}"
-			else:
+			elif type == "lldb":
 				success, command_output = debug_session.execute_command(code)
 				if not success:
 					command_output = f"Command execution failed: {command_output}"
+			elif type == "compile":
+				file_utilities.execute_command(self.workingDirectory, *self.compile_command)
+			elif type == "restart":
+				success, command_output = debug_session.restart()
 			if len(command_output.strip()) == 0:
 				command_output = "The command produced no output."
 				# print(command_output)
-			type, code = self.modelQuerier.get_output(command_output)
+			type, code = self.modelQuerier.get_output(command_output, self.workingDirectory)
 				# print(command)
 	
 	def get_stop_info(self, debug_session):
@@ -70,23 +75,23 @@ class HandlerClass:
 def main():
 	parser = argparse.ArgumentParser(description="Run specified phases of the grading process.")
 	parser.add_argument('--code_path', required=True, help=f"The directory containing the code. This directory will be copied before compilation and execution.")
-	parser.add_argument('--compile_command', required=True, help=f"The command to run to compile the code. This command will be run with the code path as the current working directory.")
+	parser.add_argument('--compile_command', nargs='*', required=True, help=f"The command to run to compile the code. This command will be run with the code path as the current working directory.")
 	parser.add_argument('--executable', required=True, help=f"The executable to run, relative to the code directory.")
 	parser.add_argument('--model', required=True, help=f"The model(s) to use debugging the program. The following model names can be queried through the OpenAI API: {querier.OpenAIModelQuerier.supported_model_names()}")
 	args = parser.parse_args()
 
 	code_directory = file_utilities.copy_to_temp(args.code_path)
 	print(f"Copied code to {code_directory}")
-	file_utilities.execute_command(code_directory, args.compile_command)
+	file_utilities.execute_command(code_directory, *args.compile_command)
 	print(f"Compiled with {args.compile_command}")
 	executable_path = os.path.join(code_directory, args.executable)
 	print(f"Running {executable_path}…")
 
 	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]	
-	handler = HandlerClass(modelQuerier, code_directory)
+	handler = HandlerClass(modelQuerier, code_directory, args.compile_command)
 	
 	session = debugging.DebuggingSession(executable_path)
-	session.start(stop_handler=handler.on_stop, pause_at_start=False)
+	session.start(stop_handler=handler.on_stop, pause_at_start=False, working_directory=code_directory)
 
 if __name__ == "__main__":
 	main()
