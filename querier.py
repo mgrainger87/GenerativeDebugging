@@ -7,6 +7,7 @@ import subprocess
 import re
 import json
 import difflib
+import file_utilities
 
 class AIModelQuerier(ABC):
 	"""
@@ -95,7 +96,14 @@ class OpenAIModelQuerier(AIModelQuerier):
 		initial_prompt = AIModelQuerier.initial_prompt()
 		print(f"*** Initial prompt: {initial_prompt}")
 		self.messages = [{"role": "system", "content": initial_prompt}]
+		self._pending_context = []
 
+		
+	def load_context(self, context_identifier):
+		self._pending_context = file_utilities.retrieve_context(context_identifier)
+		
+	def save_context(self, context_identifier):
+		file_utilities.store_context(self.messages, context_identifier)
 			
 	def is_chat_based_model(self):
 		return "gpt-3.5" in self.model_identifier or "gpt-4" in self.model_identifier
@@ -152,7 +160,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 										"properties": {
 											"start-line": {
 												"type": "integer",
-												"description": "The first line in the original file that should be replaced.",
+												"description": "The first line in the original file that should be replaced. Line numbers start at 1.",
 											},
 											"code": {
 												"type": "string",
@@ -165,7 +173,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 										"properties": {
 											"start-line": {
 												"type": "integer",
-												"description": "The first line in the updated file that should be replaced.",
+												"description": "The first line in the updated file that should be replaced. Line numbers start at 1.",
 											},
 											"code": {
 												"type": "string",
@@ -198,72 +206,72 @@ class OpenAIModelQuerier(AIModelQuerier):
 				}
 			},
 		]
-
+		
 	def validate_changes(self, source_code, change_dict):
-		# Split the source code into lines
-		lines = source_code.split("\n")
-		
-		# For each change in the changes array
+		lines = source_code.splitlines()
 		for change in change_dict["changes"]:
-			# Get the line number to replace
-			line_number = change["from-file-range"]["start-line"] - 1  # -1 since list indexing starts at 0
+			start_line = change["from-file-range"]["start-line"] - 1
+			num_lines = len(change["from-file-range"]["code"].splitlines())
+			extracted_lines = [line.lstrip().rstrip() for line in lines[start_line:start_line + num_lines]]
 			
-			# Check if the line number is valid
-			if line_number < 0 or line_number >= len(lines):
-				return False, f"Invalid line number: {line_number + 1}"
+			expected_lines = [line.lstrip().rstrip() for line in change["from-file-range"]["code"].splitlines()]
 			
-			# Check if the code in from-file-range matches the code in the determined line
-			if change["from-file-range"]["code"] != lines[line_number].strip():
-				return False, f"Code in line {line_number + 1} does not match. Expected: '{change['from-file-range']['code']}' but found: '{lines[line_number].strip()}'"
+			# Direct line-by-line comparison
+			if extracted_lines != expected_lines:
+				error_message = "Mismatch starting at line {}. Expected: '{}' but found: '{}'".format(
+					start_line + 1, "\n".join(expected_lines), "\n".join(extracted_lines))
+				return False, error_message
 		
-		# If all changes can be applied, return valid
 		return True, "Changes are valid"
 
 	def validate_changes_and_generate_unified_diff(self, data, base_path, context_lines=3):
-			file_path = data["file_path"]
-			source_code = get_source_code(base_path, file_path)
-			if source_code is None:
-				return False, f"Unable to get source code. Base path: {base_path}, file_path: {file_path}"
-
+		file_path = data["file_path"]
+		source_code = file_utilities.get_source_code(base_path, file_path)
+		if source_code is None:
+			return False, f"Unable to get source code. Base path: {base_path}, file_path: {file_path}"
+	
+		# Step 1: Validate the changes
+		is_valid, message = self.validate_changes(source_code, data)
+		if not is_valid:
+			return False, message
 		
-			# Step 1: Validate the changes
-			is_valid, message = self.validate_changes(source_code, data)
-			if not is_valid:
-				return False, message
+		# Split the source code into lines for easy access
+		source_lines = source_code.splitlines(keepends=True)
+		
+		# Step 2: Generate the unified diff with context lines if changes are valid
+		diffs = []
+		
+		for change in data["changes"]:
+			# Determine the range of lines affected by this change
+			start_line = change["from-file-range"]["start-line"] - 1
+			end_line = start_line + len(change["from-file-range"]["code"].splitlines(keepends=True))
 			
-			# Split the source code into lines for easy access
-			source_lines = source_code.splitlines(keepends=True)
+			# Extract the relevant lines from the source code
+			from_code = [line.rstrip() for line in source_lines[max(0, start_line - context_lines):min(end_line + context_lines, len(source_lines))]]
+			to_code = from_code.copy()
 			
-			# Step 2: Generate the unified diff with context lines if changes are valid
-			diffs = []
+			# Apply the change to the to_code list
+			change_lines = [line.rstrip() for line in change["to-file-range"]["code"].splitlines(keepends=True)]
+			for i in range(len(change_lines)):
+				if i + context_lines < len(to_code):
+					to_code[i + context_lines] = change_lines[i]
+				else:
+					to_code.append(change_lines[i])
 			
-			for change in data["changes"]:
-				# Determine the range of lines affected by this change
-				start_line = change["from-file-range"]["start-line"] - 1
-				end_line = start_line + len(change["from-file-range"]["code"].splitlines(keepends=True))
-				
-				# Extract the relevant lines from the source code
-				from_code = source_lines[max(0, start_line - context_lines):min(end_line + context_lines, len(source_lines))]
-				to_code = from_code.copy()
-				
-				# Apply the change to the to_code list
-				for i in range(len(change["from-file-range"]["code"].splitlines())):
-					to_code[i + context_lines] = change["to-file-range"]["code"].splitlines(keepends=True)[i]
-				
-				# Generate unified diff using difflib with context lines
-				diff = difflib.unified_diff(
-					from_code, 
-					to_code, 
-					fromfile=file_path, 
-					tofile=file_path, 
-					lineterm='',
-					n=context_lines
-				)
-				
-				diffs.extend(diff)
+			# Generate unified diff using difflib with context lines
+			diff = difflib.unified_diff(
+				from_code, 
+				to_code, 
+				fromfile=file_path, 
+				tofile=file_path, 
+				lineterm='',
+				n=context_lines
+			)
 			
-			# Step 3: Return the patch
-			return True, "\n".join(diffs)
+			diffs.extend(diff)
+		
+		# Step 3: Return the patch
+		return True, "\n".join(diffs)
 
 	def generate_unified_diff(self, data, base_path):
 		file_path = data["file_path"]
@@ -301,25 +309,39 @@ class OpenAIModelQuerier(AIModelQuerier):
 				entry['content'] = None
 		return data		
 
+	def get_next_response_from_context(self):
+		response = None
+		while len(self._pending_context) > 0 and response is None:
+			next_message = self._pending_context[0]
+			if next_message['role'] == 'assistant':
+				response = next_message
+			self._pending_context.pop(0)
+		return response
+
 	def get_output(self, input, base_path):
 		prompt = input
-		
 		input_messages = self.strip_assistant_content(self.messages)
 		print(f"***Prompt:\n{prompt}")
 		# print(f"Input messages: {input_messages}")
 		# Send the prompt to the OpenAI API
 		self.messages.append({"role": "user", "content": prompt})
-		response = openai.ChatCompletion.create(
-			model=self.model_identifier,
-			max_tokens=1000,
-			messages=input_messages,
-			functions = self.get_functions()
-		)
+		
+		response_message = self.get_next_response_from_context()
+		if response_message is not None:
+			print(f"***Using response from context")
+		else:
+			response = openai.ChatCompletion.create(
+				model=self.model_identifier,
+				max_tokens=1000,
+				messages=input_messages,
+				functions = self.get_functions()
+			)
+			response_message = response.choices[0].message
 		
 		# Extract the generated code
-		self.messages.append(response.choices[0].message)
+		self.messages.append(response_message)
+		self.save_context("defg")
 		# print(response)
-		response_message = response.choices[0].message
 
 		if response_message.get("content"):
 			print(f"***Response:\n{response_message.get('content')}")

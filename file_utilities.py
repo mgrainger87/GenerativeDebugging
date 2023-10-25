@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import os
 import subprocess
+import pickle
 
 def copy_to_temp(source_dir):
 	# Create a temporary directory
@@ -17,7 +18,6 @@ def copy_to_temp(source_dir):
 			shutil.copy2(s, d)
 			
 	return temp_dir
-
 
 def execute_command(directory_path, command, *args):
 	"""
@@ -67,3 +67,23 @@ def get_source_code(working_directory, file_path):
 	except Exception as e:
 		print(e)
 		return None
+		
+# Define the base directory in the macOS cache location
+BASE_DIR = os.path.join(os.path.expanduser('~'), 'Library', 'Caches', 'com.yourcompany.yourappname')
+		
+
+def get_file_path(context_id):
+	"""Return the file path associated with the given context_id."""
+	return os.path.join(BASE_DIR, f"{context_id}.pkl")
+
+def store_context(context, context_id):
+	"""Store the context to a file associated with the given context_id."""
+	if not os.path.exists(BASE_DIR):
+		os.makedirs(BASE_DIR)
+	with open(get_file_path(context_id), 'wb') as f:
+		pickle.dump(context, f)
+
+def retrieve_context(context_id):
+	"""Retrieve the context associated with the given context_id."""
+	with open(get_file_path(context_id), 'rb') as f:
+		return pickle.load(f)

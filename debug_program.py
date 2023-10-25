@@ -32,7 +32,7 @@ class HandlerClass:
 			elif type == "restart":
 				success, command_output = debug_session.restart()
 			elif type == "error":
-				command_output = error
+				command_output = code
 			if len(command_output.strip()) == 0:
 				command_output = "The command produced no output."
 				# print(command_output)
@@ -80,6 +80,7 @@ def main():
 	parser.add_argument('--compile_command', nargs='*', required=True, help=f"The command to run to compile the code. This command will be run with the code path as the current working directory.")
 	parser.add_argument('--executable', required=True, help=f"The executable to run, relative to the code directory.")
 	parser.add_argument('--model', required=True, help=f"The model(s) to use debugging the program. The following model names can be queried through the OpenAI API: {querier.OpenAIModelQuerier.supported_model_names()}")
+	parser.add_argument('--context_identifier', required=False, help=f"The stored context to resume from.")
 	args = parser.parse_args()
 
 	code_directory = file_utilities.copy_to_temp(args.code_path)
@@ -89,8 +90,9 @@ def main():
 	executable_path = os.path.join(code_directory, args.executable)
 	print(f"Running {executable_path}…")
 
-	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]	
+	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]
 	handler = HandlerClass(modelQuerier, code_directory, args.compile_command)
+	modelQuerier.load_context(args.context_identifier)
 	
 	session = debugging.DebuggingSession(executable_path)
 	session.start(stop_handler=handler.on_stop, pause_at_start=False, working_directory=code_directory)
