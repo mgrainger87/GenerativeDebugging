@@ -31,6 +31,8 @@ class HandlerClass:
 				file_utilities.execute_command(self.workingDirectory, *self.compile_command)
 			elif type == "restart":
 				success, command_output = debug_session.restart()
+			elif type == "error":
+				command_output = error
 			if len(command_output.strip()) == 0:
 				command_output = "The command produced no output."
 				# print(command_output)

@@ -94,7 +94,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		super().__init__(model_identifier)
 		initial_prompt = AIModelQuerier.initial_prompt()
 		print(f"*** Initial prompt: {initial_prompt}")
-		self.messages = [{"role": "user", "content": initial_prompt}]
+		self.messages = [{"role": "system", "content": initial_prompt}]
 
 			
 	def is_chat_based_model(self):
@@ -151,10 +151,12 @@ class OpenAIModelQuerier(AIModelQuerier):
 										"type": "object",
 										"properties": {
 											"start-line": {
-												"type": "integer"
+												"type": "integer",
+												"description": "The first line in the original file that should be replaced.",
 											},
 											"code": {
-												"type": "string"
+												"type": "string",
+												"description": "The code that should be replaced by the code in to-file-range.",
 											}
 										}
 									},
@@ -162,10 +164,12 @@ class OpenAIModelQuerier(AIModelQuerier):
 										"type": "object",
 										"properties": {
 											"start-line": {
-												"type": "integer"
+												"type": "integer",
+												"description": "The first line in the updated file that should be replaced.",
 											},
 											"code": {
-												"type": "string"
+												"type": "string",
+												"description": "The code to replace the code in from-file-range.",
 											}
 										}
 									},
@@ -194,6 +198,72 @@ class OpenAIModelQuerier(AIModelQuerier):
 				}
 			},
 		]
+
+	def validate_changes(self, source_code, change_dict):
+		# Split the source code into lines
+		lines = source_code.split("\n")
+		
+		# For each change in the changes array
+		for change in change_dict["changes"]:
+			# Get the line number to replace
+			line_number = change["from-file-range"]["start-line"] - 1  # -1 since list indexing starts at 0
+			
+			# Check if the line number is valid
+			if line_number < 0 or line_number >= len(lines):
+				return False, f"Invalid line number: {line_number + 1}"
+			
+			# Check if the code in from-file-range matches the code in the determined line
+			if change["from-file-range"]["code"] != lines[line_number].strip():
+				return False, f"Code in line {line_number + 1} does not match. Expected: '{change['from-file-range']['code']}' but found: '{lines[line_number].strip()}'"
+		
+		# If all changes can be applied, return valid
+		return True, "Changes are valid"
+
+	def validate_changes_and_generate_unified_diff(self, data, base_path, context_lines=3):
+			file_path = data["file_path"]
+			source_code = get_source_code(base_path, file_path)
+			if source_code is None:
+				return False, f"Unable to get source code. Base path: {base_path}, file_path: {file_path}"
+
+		
+			# Step 1: Validate the changes
+			is_valid, message = self.validate_changes(source_code, data)
+			if not is_valid:
+				return False, message
+			
+			# Split the source code into lines for easy access
+			source_lines = source_code.splitlines(keepends=True)
+			
+			# Step 2: Generate the unified diff with context lines if changes are valid
+			diffs = []
+			
+			for change in data["changes"]:
+				# Determine the range of lines affected by this change
+				start_line = change["from-file-range"]["start-line"] - 1
+				end_line = start_line + len(change["from-file-range"]["code"].splitlines(keepends=True))
+				
+				# Extract the relevant lines from the source code
+				from_code = source_lines[max(0, start_line - context_lines):min(end_line + context_lines, len(source_lines))]
+				to_code = from_code.copy()
+				
+				# Apply the change to the to_code list
+				for i in range(len(change["from-file-range"]["code"].splitlines())):
+					to_code[i + context_lines] = change["to-file-range"]["code"].splitlines(keepends=True)[i]
+				
+				# Generate unified diff using difflib with context lines
+				diff = difflib.unified_diff(
+					from_code, 
+					to_code, 
+					fromfile=file_path, 
+					tofile=file_path, 
+					lineterm='',
+					n=context_lines
+				)
+				
+				diffs.extend(diff)
+			
+			# Step 3: Return the patch
+			return True, "\n".join(diffs)
 
 	def generate_unified_diff(self, data, base_path):
 		file_path = data["file_path"]
@@ -225,38 +295,52 @@ class OpenAIModelQuerier(AIModelQuerier):
 	
 		return "\n".join(diffs)
 
+	def strip_assistant_content(self, data):
+		for entry in data:
+			if entry.get('role') == 'assistant' and 'content' in entry:
+				entry['content'] = None
+		return data		
+
 	def get_output(self, input, base_path):
 		prompt = input
 		
+		input_messages = self.strip_assistant_content(self.messages)
 		print(f"***Prompt:\n{prompt}")
-
+		# print(f"Input messages: {input_messages}")
 		# Send the prompt to the OpenAI API
 		self.messages.append({"role": "user", "content": prompt})
 		response = openai.ChatCompletion.create(
 			model=self.model_identifier,
 			max_tokens=1000,
-			messages=self.messages,
+			messages=input_messages,
 			functions = self.get_functions()
 		)
 		
 		# Extract the generated code
 		self.messages.append(response.choices[0].message)
-		print(response)
+		# print(response)
 		response_message = response.choices[0].message
 
+		if response_message.get("content"):
+			print(f"***Response:\n{response_message.get('content')}")
 		if response_message.get("function_call"):
 			function_call = response_message["function_call"]
-			
+			print(function_call)
 			function_name = function_call["name"]
 			function_arguments = json.loads(function_call["arguments"])
 			if function_name == "run_debugger_command":
 				command = function_arguments["cmd"]
-				print(f"Returning command {command}")
+				print(f"***Command: `{command}`")
 				return "lldb", command
 			elif function_name == "modify_code":
-				diff = self.generate_unified_diff(function_arguments, base_path)
-				print(f"Returning diff {diff}")
-				return "diff", diff
+				success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
+				
+				if success:					
+					print(f"***Diff:\n{result}")
+					return "diff", result
+				else:
+					print(f"***Diff generation error: {result}")
+					return "error", result
 			else:
 				return function_name, None
 # 

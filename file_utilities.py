@@ -54,7 +54,16 @@ def apply_patch_from_string(working_directory, patch_string):
 			return (True, None)
 		else:
 			# There was an error applying the patch
-			return (False, stderr.decode())
+			return (False, f'{stdout.decode()} {stderr.decode()}')
 	except Exception as e:
 		# There was an error running the subprocess
 		return (False, str(e))
+
+def get_source_code(working_directory, file_path):
+	try:
+		full_path = os.path.join(working_directory, file_path)
+		with open(full_path, 'r') as f:
+			return f.read()
+	except Exception as e:
+		print(e)
+		return None
