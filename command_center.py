@@ -76,7 +76,7 @@ class CompileCommand(Command):
 
 class RestartCommand(Command):
 	def run(self):
-		self.success, self.command_output = debug_session.restart()
+		self.success, self.command_output = self.globalContext.debugSession.restart()
 
 class ErrorCommand(Command):
 	def run(self):

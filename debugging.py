@@ -40,6 +40,7 @@ class DebuggingSession:
 		
 	def execute_command(self, command_str):
 		command_interpreter = self.debugger.GetCommandInterpreter()
+		command_interpreter.HandleCommand('settings set auto-confirm 1', lldb.SBCommandReturnObject())
 		result = lldb.SBCommandReturnObject()
 		command_interpreter.HandleCommand(command_str, result)
 		
@@ -51,7 +52,7 @@ class DebuggingSession:
 	def restart(self):
 		# 1. Terminate the current process if it's running.
 		if self.process.IsValid() and self.process.GetState() != lldb.eStateExited:
-			self.process.Terminate()
+			self.process.Kill()
 		
 		# 2. Create a new target.
 		self.target = self.debugger.CreateTarget(self.executable_path)
