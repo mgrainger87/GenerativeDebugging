@@ -73,7 +73,9 @@ class DiffCommand(Command):
 class DebuggerCommand(Command):
 	def run(self):
 		self.success, command_output = self.globalContext.debugSession.execute_command(self.context)
-		if not self.success:
+		if self.success:
+			self.command_output = command_output
+		else:
 			self.command_output = f"Command execution failed: {command_output}"
 
 class CompileCommand(Command):

@@ -14,9 +14,7 @@
       "--executable",
       "main",
       "--model",
-      "gpt-4",
-      "--context_identifier",
-      "abcd"
+      "gpt-4"
     ],
     "python.debug.script" : "debug_program.py"
   }

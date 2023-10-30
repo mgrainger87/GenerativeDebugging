@@ -250,11 +250,13 @@ class OpenAIModelQuerier(AIModelQuerier):
 			from_code = [line.rstrip() for line in source_lines[max(0, start_line - context_lines):min(end_line + context_lines, len(source_lines))]]
 			to_code = from_code.copy()
 			
-			# Apply the change to the to_code list
+			# Apply the change to the to_code list, starting from the context lines before the change
 			change_lines = [line.rstrip() for line in change["to-file-range"]["code"].splitlines(keepends=True)]
+			change_start_index = start_line - max(0, start_line - context_lines)
 			for i in range(len(change_lines)):
-				if i + context_lines < len(to_code):
-					to_code[i + context_lines] = change_lines[i]
+				to_code_index = change_start_index + i
+				if to_code_index < len(to_code):
+					to_code[to_code_index] = change_lines[i]
 				else:
 					to_code.append(change_lines[i])
 			
@@ -270,7 +272,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 			
 			diffs.extend(diff)
 		
-		# Step 3: Return the patch
+		# Return the patch
 		return True, "\n".join(diffs)
 
 	def generate_unified_diff(self, data, base_path):
