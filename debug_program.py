@@ -24,7 +24,8 @@ def main():
 
 	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]
 	commandCenter = command_center.CommandCenter(modelQuerier, code_directory, args.compile_command)
-	modelQuerier.load_context(args.context_identifier)
+	if args.context_identifier:
+		modelQuerier.load_context(args.context_identifier)
 	
 	session = debugging.DebuggingSession(executable_path)
 	session.start(stop_handler=commandCenter.on_stop, pause_at_start=False, working_directory=code_directory)

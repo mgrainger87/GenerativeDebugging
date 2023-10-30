@@ -1,0 +1,23 @@
+{
+  "extension" : {
+    "identifier" : "panic.Python",
+    "name" : "Python"
+  },
+  "extensionTemplate" : "pythonDebug",
+  "extensionValues" : {
+    "python.debug.customArgs" : [
+      "--code_path",
+      "programs\/multiunit2",
+      "--compile_command",
+      "make",
+      "all",
+      "--executable",
+      "main",
+      "--model",
+      "gpt-4",
+      "--context_identifier",
+      "abcd"
+    ],
+    "python.debug.script" : "debug_program.py"
+  }
+}

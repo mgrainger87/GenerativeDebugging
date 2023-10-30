@@ -1,5 +1,7 @@
 import file_utilities
 from abc import ABC, abstractmethod
+import sys
+from termcolor import colored
 
 class GlobalContext:
 	def __init__(self, workingDirectory, compileCommand):
@@ -23,9 +25,12 @@ class CommandCenter:
 		while True:
 			cmd = Command.get_command_object(type, context, self.globalContext)
 			cmd.run()
+			print(f"***Command: {colored(type, 'red')}\n\tcontext: {colored(context, 'blue')}\n\tsuccess: {cmd.success}\n\tOutput: {colored(cmd.command_output, 'green')}")
+			# print(f"State: {debug_session.process.GetState()}")
 			if len(cmd.command_output.strip()) == 0:
 				command_output = "The command produced no output."
 			type, context = self.modelQuerier.get_output(cmd.command_output, self.globalContext.workingDirectory)
+			
 
 				
 class Command(ABC):
@@ -45,6 +50,10 @@ class Command(ABC):
 			return CompileCommand(context, globalContext)
 		elif type == "restart":
 			return RestartCommand(context, globalContext)
+		elif type == "error":
+			return ErrorCommand(context, globalContext)
+		elif type == "none":
+			return NoCommand(context, globalContext)
 		else:
 			raise ValueError(f"Unsupported command type: {type}")
 
@@ -54,7 +63,6 @@ class Command(ABC):
 
 class DiffCommand(Command):
 	def run(self):
-		print(f"self.context: {self.context}")
 		self.success, command_output = file_utilities.apply_patch_from_string(self.globalContext.workingDirectory, self.context)
 		
 		if self.success:
@@ -71,8 +79,10 @@ class DebuggerCommand(Command):
 class CompileCommand(Command):
 	def run(self):
 		# FIXME: success and output
-		file_utilities.execute_command(self.globalContext.workingDirectory, *self.globalContext.compileCommand)
-		self.success = True
+		returncode, stdout, stderr = file_utilities.execute_command(self.globalContext.workingDirectory, *self.globalContext.compileCommand)
+		self.success = (returncode == 0)
+		if not self.success:
+			self.command_output = f"Compilation failed: {stdout} {stderr}"
 
 class RestartCommand(Command):
 	def run(self):
@@ -82,3 +92,9 @@ class ErrorCommand(Command):
 	def run(self):
 		self.success = False
 		self.command_output = self.context
+
+class NoCommand(Command):
+	def run(self):
+		self.success = True
+		print("The LLM had no further commands.")
+		sys.exit(1)

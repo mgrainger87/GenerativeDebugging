@@ -29,7 +29,6 @@ def execute_command(directory_path, command, *args):
 	:return: A tuple containing the return code, stdout, and stderr.
 	"""
 	full_command = [command] + list(args)
-	print(full_command)
 	
 	result = subprocess.run(full_command, cwd=directory_path, text=True, capture_output=True)
 	

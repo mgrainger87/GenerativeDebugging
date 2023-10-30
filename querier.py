@@ -345,6 +345,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 
 		if response_message.get("content"):
 			print(f"***Response:\n{response_message.get('content')}")
+		
 		if response_message.get("function_call"):
 			function_call = response_message["function_call"]
 			print(function_call)
@@ -365,6 +366,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 					return "error", result
 			else:
 				return function_name, None
+		else:
+			return "none", None
 # 
 # 		print(f"***Response:\n{response}")
 # 		type, code = self.extract_code_and_type(response)
