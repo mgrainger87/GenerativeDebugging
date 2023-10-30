@@ -14,6 +14,9 @@ def main():
 	parser.add_argument('--model', required=True, help=f"The model(s) to use debugging the program. The following model names can be queried through the OpenAI API: {querier.OpenAIModelQuerier.supported_model_names()}")
 	parser.add_argument('--context_identifier', required=False, help=f"The stored context to resume from.")
 	args = parser.parse_args()
+	
+	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]
+	print(f"***Using context identifier {modelQuerier.get_context_identifier()}")
 
 	code_directory = file_utilities.copy_to_temp(args.code_path)
 	print(f"Copied code to {code_directory}")
@@ -22,7 +25,6 @@ def main():
 	executable_path = os.path.join(code_directory, args.executable)
 	print(f"Running {executable_path}…")
 
-	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]
 	commandCenter = command_center.CommandCenter(modelQuerier, code_directory, args.compile_command)
 	if args.context_identifier:
 		modelQuerier.load_context(args.context_identifier)

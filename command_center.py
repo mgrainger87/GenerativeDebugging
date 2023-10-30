@@ -21,12 +21,13 @@ class CommandCenter:
 		
 		# Process the stop information or print it
 		# print(stop_info)
-		type, context = self.modelQuerier.get_output(stop_info, self.globalContext.compileCommand)
+		type, context = self.modelQuerier.get_output(stop_info, self.globalContext.workingDirectory)
 		while True:
 			cmd = Command.get_command_object(type, context, self.globalContext)
 			cmd.run()
 			print(f"***Command: {colored(type, 'red')}\n\tcontext: {colored(context, 'blue')}\n\tsuccess: {cmd.success}\n\tOutput: {colored(cmd.command_output, 'green')}")
 			# print(f"State: {debug_session.process.GetState()}")
+			print(f"Stripped: {cmd.command_output.strip()}")
 			if len(cmd.command_output.strip()) == 0:
 				command_output = "The command produced no output."
 			type, context = self.modelQuerier.get_output(cmd.command_output, self.globalContext.workingDirectory)

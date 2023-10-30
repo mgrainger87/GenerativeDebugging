@@ -40,7 +40,7 @@ class DebuggingSession:
 		
 	def execute_command(self, command_str):
 		command_interpreter = self.debugger.GetCommandInterpreter()
-		# command_interpreter.HandleCommand('settings set auto-confirm 1', lldb.SBCommandReturnObject())
+		command_interpreter.HandleCommand('settings set auto-confirm 1', lldb.SBCommandReturnObject())
 		result = lldb.SBCommandReturnObject()
 		command_interpreter.HandleCommand(command_str, result)
 		

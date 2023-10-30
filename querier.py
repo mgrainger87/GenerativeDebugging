@@ -8,6 +8,7 @@ import re
 import json
 import difflib
 import file_utilities
+import uuid
 
 class AIModelQuerier(ABC):
 	"""
@@ -97,6 +98,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		print(f"*** Initial prompt: {initial_prompt}")
 		self.messages = [{"role": "system", "content": initial_prompt}]
 		self._pending_context = []
+		self._output_context_identifier = uuid.uuid4()
 
 		
 	def load_context(self, context_identifier):
@@ -104,6 +106,9 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 	def save_context(self, context_identifier):
 		file_utilities.store_context(self.messages, context_identifier)
+		
+	def get_context_identifier(self):
+		return self._output_context_identifier
 			
 	def is_chat_based_model(self):
 		return "gpt-3.5" in self.model_identifier or "gpt-4" in self.model_identifier
@@ -173,7 +178,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 										"properties": {
 											"start-line": {
 												"type": "integer",
-												"description": "The first line in the updated file that should be replaced. Line numbers start at 1.",
+												"description": "The first line in the updated file that should be replaced. This should be the line number after previous changes in the array are applied. Line numbers start at 1.",
 											},
 											"code": {
 												"type": "string",
@@ -342,7 +347,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 		# Extract the generated code
 		self.messages.append(response_message)
-		self.save_context("defg")
+		self.save_context(self._output_context_identifier)
 		# print(response)
 
 		if response_message.get("content"):
@@ -355,17 +360,14 @@ class OpenAIModelQuerier(AIModelQuerier):
 			function_arguments = json.loads(function_call["arguments"])
 			if function_name == "run_debugger_command":
 				command = function_arguments["cmd"]
-				print(f"***Command: `{command}`")
 				return "lldb", command
 			elif function_name == "modify_code":
 				success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
 				
 				if success:					
-					print(f"***Diff:\n{result}")
 					return "diff", result
 				else:
-					print(f"***Diff generation error: {result}")
-					return "error", result
+					return "error", f"Error generating diff for this change: {result}"
 			else:
 				return function_name, None
 		else:
