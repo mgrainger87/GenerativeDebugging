@@ -47,7 +47,7 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process.\n\nUse the provided functions to issue lldb commands and make changes to the source code."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
@@ -324,6 +324,44 @@ class OpenAIModelQuerier(AIModelQuerier):
 				response = next_message
 			self._pending_context.pop(0)
 		return response
+		
+	def merge_chunks(self, chunks):
+		# Initialize an empty dictionary to store the merged content
+		merged_object = {}
+	
+		# Iterate through the list of chunks
+		for obj in chunks:
+			# Assuming obj['delta'] is the way to access the delta dict
+			obj_delta = obj['delta']
+	
+			# Iterate through each key in the delta dictionary
+			for key, value in obj_delta.items():
+				# Check if the key already exists at the top level; if not, initialize it
+				if key not in merged_object:
+					if isinstance(value, str):
+						merged_object[key] = ""
+					elif isinstance(value, list):
+						merged_object[key] = []
+					elif isinstance(value, dict):
+						merged_object[key] = {}
+					else:
+						# For other types, we can't merge; we'll just keep the last value seen
+						merged_object[key] = value
+	
+				# Now, merge the value with the existing value in the merged_object
+				if isinstance(merged_object[key], str) and isinstance(value, str):
+					merged_object[key] += value
+				elif isinstance(merged_object[key], list) and isinstance(value, list):
+					merged_object[key].extend(value)
+				elif isinstance(merged_object[key], dict) and isinstance(value, dict):
+					for subkey, subvalue in value.items():
+						# This assumes that values in nested dictionaries don't need to be merged
+						merged_object[key][subkey] = subvalue
+				else:
+					# If the types are mismatched or non-mergable, we'll overwrite
+					merged_object[key] = value
+	
+		return merged_object
 
 	def get_output(self, input, base_path):
 		prompt = input
@@ -341,9 +379,32 @@ class OpenAIModelQuerier(AIModelQuerier):
 				model=self.model_identifier,
 				max_tokens=1000,
 				messages=input_messages,
-				functions = self.get_functions()
+				functions = self.get_functions(),
+				stream=True
 			)
-			response_message = response.choices[0].message
+
+# create variables to collect the stream of chunks
+			collected_chunks = []
+			collected_messages = []
+			# iterate through the stream of events
+			for chunk in response:
+				collected_chunks.append(chunk.choices[0])  # save the event response
+				chunk_message = chunk['choices'][0]  # extract the message
+				collected_messages.append(chunk_message)  # save the message
+				
+				if chunk_message.delta.get("content"):
+					print(chunk_message.delta.content, end = "", flush=True)
+
+				# print(f"Message received: {chunk_message}")  # print the delay and text
+			
+			# print the time delay and text received
+			full_reply_content = ''.join([m.get('content', '') for m in collected_messages])
+			print(f"Full conversation received: {full_reply_content}")
+			print(f"Collected chunks: {collected_chunks}")
+			
+			response_message = self.merge_chunks(collected_chunks)
+			print(f"Merged: {response_message}")
+			
 		
 		# Extract the generated code
 		self.messages.append(response_message)
