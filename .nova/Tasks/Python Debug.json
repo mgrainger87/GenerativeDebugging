@@ -14,7 +14,9 @@
       "--executable",
       "main",
       "--model",
-      "gpt-4"
+      "gpt-4-1106-preview",
+      "--context",
+      "191efa51-708c-4734-aa14-f488083438f4"
     ],
     "python.debug.script" : "debug_program.py"
   }

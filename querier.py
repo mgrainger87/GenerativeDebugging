@@ -9,6 +9,7 @@ import json
 import difflib
 import file_utilities
 import uuid
+from termcolor import colored
 
 class AIModelQuerier(ABC):
 	"""
@@ -41,13 +42,13 @@ class AIModelQuerier(ABC):
 			subclass_mapping = {}
 		instances = []
 		for model_name in model_names:
-			subclass = subclass_mapping.get(model_name, HumanAIModelQuerier)
+			subclass = subclass_mapping.get(model_name)
 			instances.append(subclass(model_name))
 		return instances
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing a command, explain your reasoning about what command should be issued next and why it will help with the debugging of the process."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing commands, explain your reasoning about what command should be issued next and why it will help with the debugging of the process."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
@@ -56,30 +57,6 @@ class AIModelQuerier(ABC):
 
 	def __str__(self) -> str:
 		return f"{self.__class__.__name__}(model_identifier={self.model_identifier})"
-
-class HumanAIModelQuerier(AIModelQuerier):	
-	def get_output(self, input):
-		prompt = input
-		print("*** Human querier in use. Copy and paste the prompt below and provide it to the LLM. Provide the response, followed by an EOF character (ctrl-D).")
-		print("*** PROMPT BEGIN")
-		print(prompt)
-		print("*** PROMPT END")
-		
-		# Copy to pasteboard
-		process = subprocess.Popen('pbcopy', universal_newlines=True, stdin=subprocess.PIPE)
-		process.communicate(prompt)
-		process.wait()
-
-		lines = []
-		try:
-			for line in sys.stdin:
-				lines.append(line)
-		except EOFError:
-			pass
-		response = "".join(lines)
-
-		
-		return response
 
 class OpenAIModelQuerier(AIModelQuerier):
 	@classmethod
@@ -147,7 +124,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 			},
 			{
 				"name": "modify_code",
-				"description": "Modify the source code.",
+				"description": "Modify the source code, recompile, and restart the debugger to test changes.",
 				"parameters": {
 					"type": "object",
 					"properties": {
@@ -171,7 +148,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 												"type": "string",
 												"description": "The code that should be replaced by the code in to-file-range.",
 											}
-										}
+										},
+										"required": ["start-line", "code"]
 									},
 									"to-file-range": {
 										"type": "object",
@@ -184,7 +162,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 												"type": "string",
 												"description": "The code to replace the code in from-file-range.",
 											}
-										}
+										},
+										"required": ["start-line", "code"]
 									},
 
 								}
@@ -193,14 +172,6 @@ class OpenAIModelQuerier(AIModelQuerier):
 					},
 					"required": ["file_path", "changes"]
 				},
-			},
-			{
-				"name": "compile",
-				"description": "Compile the current version of the code.",
-				"parameters": {
-					"type": "object",
-					"properties": {}
-				}
 			},
 			{
 				"name": "restart",
@@ -311,10 +282,15 @@ class OpenAIModelQuerier(AIModelQuerier):
 		return "\n".join(diffs)
 
 	def strip_assistant_content(self, data):
+		stripped_data = []
+		
 		for entry in data:
-			if entry.get('role') == 'assistant' and 'content' in entry:
-				entry['content'] = None
-		return data		
+			if entry.get('role') == 'assistant' and 'content' in entry and len(entry) > 2:
+				entry.pop('content')
+			if 'role' in entry:
+				stripped_data.append(entry)
+					
+		return stripped_data
 
 	def get_next_response_from_context(self):
 		response = None
@@ -357,10 +333,13 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def get_output(self, input, base_path):
 		prompt = input
 		input_messages = self.strip_assistant_content(self.messages)
-		print(f"***Prompt:\n{prompt}")
+		print(f"***Input to model:\n{prompt}")
 		# print(f"Input messages: {input_messages}")
 		# Send the prompt to the OpenAI API
-		self.messages.append({"role": "user", "content": prompt})
+
+		new_message = {"role": "user", "content": prompt}
+		self.messages.append(new_message)
+		input_messages.append(new_message)
 		
 		response_message = self.get_next_response_from_context()
 		if response_message is not None:
@@ -371,39 +350,38 @@ class OpenAIModelQuerier(AIModelQuerier):
 				max_tokens=1000,
 				messages=input_messages,
 				functions = self.get_functions(),
+				# function_call={"name": "run_debugger_command"},
 				stream=True
 			)
 
 			# create variables to collect the stream of chunks
 			collected_chunks = []
-			collected_messages = []
+			
+			print("***Streamed response from model: ", end = "")
 			# iterate through the stream of events
 			for chunk in response:
 				collected_chunks.append(chunk.choices[0])  # save the event response
 				chunk_message = chunk['choices'][0]  # extract the message
-				collected_messages.append(chunk_message)  # save the message
 				
 				if chunk_message.delta.get("content"):
-					print(chunk_message.delta.content, end = "", flush=True)
+					print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
 
-				# print(f"Message received: {chunk_message}")  # print the delay and text
-			
+			print("")
 			# print the time delay and text received
-			full_reply_content = ''.join([m.get('content', '') for m in collected_messages])
-			print(f"Full conversation received: {full_reply_content}")
-			print(f"Collected chunks: {collected_chunks}")
-			
 			response_message = self.merge_chunks(collected_chunks)
-			print(f"Merged: {response_message}")
+			# print(f"Merged: {response_message}")
 			
 		
 		# Extract the generated code
 		self.messages.append(response_message)
 		self.save_context(self._output_context_identifier)
+		interimUUID = uuid.uuid4()
+		self.save_context(interimUUID)
+		print(f"Saved interim state as {interimUUID}")
 		# print(response)
 
-		if response_message.get("content"):
-			print(f"***Response:\n{response_message.get('content')}")
+		# if response_message.get("content"):
+		# 	print(f"***Response:\n{response_message.get('content')}")
 		
 		if response_message.get("function_call"):
 			function_call = response_message["function_call"]
@@ -417,7 +395,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
 				
 				if success:					
-					return "diff", result
+					return "patch", result
 				else:
 					return "error", f"Error generating diff for this change: {result}"
 			else:
