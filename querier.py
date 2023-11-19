@@ -326,41 +326,32 @@ class OpenAIModelQuerier(AIModelQuerier):
 		return response
 		
 	def merge_chunks(self, chunks):
+		# Function to recursively merge dictionaries
+		def merge_dict(d1, d2):
+			for key in d2:
+				if key in d1:
+					if isinstance(d1[key], dict) and isinstance(d2[key], dict):
+						merge_dict(d1[key], d2[key])
+					elif isinstance(d1[key], list) and isinstance(d2[key], list):
+						d1[key].extend(d2[key])
+					elif isinstance(d1[key], str) and isinstance(d2[key], str):
+						d1[key] += d2[key]
+					else:
+						# If the types are mismatched or non-mergable, overwrite
+						d1[key] = d2[key]
+				else:
+					d1[key] = d2[key]
+		
 		# Initialize an empty dictionary to store the merged content
 		merged_object = {}
-	
+		
 		# Iterate through the list of chunks
 		for obj in chunks:
-			# Assuming obj['delta'] is the way to access the delta dict
-			obj_delta = obj['delta']
-	
-			# Iterate through each key in the delta dictionary
-			for key, value in obj_delta.items():
-				# Check if the key already exists at the top level; if not, initialize it
-				if key not in merged_object:
-					if isinstance(value, str):
-						merged_object[key] = ""
-					elif isinstance(value, list):
-						merged_object[key] = []
-					elif isinstance(value, dict):
-						merged_object[key] = {}
-					else:
-						# For other types, we can't merge; we'll just keep the last value seen
-						merged_object[key] = value
-	
-				# Now, merge the value with the existing value in the merged_object
-				if isinstance(merged_object[key], str) and isinstance(value, str):
-					merged_object[key] += value
-				elif isinstance(merged_object[key], list) and isinstance(value, list):
-					merged_object[key].extend(value)
-				elif isinstance(merged_object[key], dict) and isinstance(value, dict):
-					for subkey, subvalue in value.items():
-						# This assumes that values in nested dictionaries don't need to be merged
-						merged_object[key][subkey] = subvalue
-				else:
-					# If the types are mismatched or non-mergable, we'll overwrite
-					merged_object[key] = value
-	
+			obj_delta = obj['delta']  # Access the delta dict
+		
+			# Use the recursive merge function
+			merge_dict(merged_object, obj_delta)
+		
 		return merged_object
 
 	def get_output(self, input, base_path):
@@ -383,7 +374,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				stream=True
 			)
 
-# create variables to collect the stream of chunks
+			# create variables to collect the stream of chunks
 			collected_chunks = []
 			collected_messages = []
 			# iterate through the stream of events
