@@ -5,7 +5,11 @@ from functools import partial
 import file_utilities
 import os
 import command_center
-				
+from termcolor import colored
+
+def gprint(input_str):
+	print(colored(input_str, 'light_grey'))
+			
 def main():
 	parser = argparse.ArgumentParser(description="Run specified phases of the grading process.")
 	parser.add_argument('--code_path', required=True, help=f"The directory containing the code. This directory will be copied before compilation and execution.")
@@ -16,21 +20,28 @@ def main():
 	args = parser.parse_args()
 	
 	modelQuerier = querier.AIModelQuerier.resolve_queriers([args.model])[0]
-	print(f"***Using context identifier {modelQuerier.get_context_identifier()}")
+	gprint(f"***Using context identifier {modelQuerier.get_context_identifier()}")
 
 	code_directory = file_utilities.copy_to_temp(args.code_path)
-	print(f"Copied code to {code_directory}")
+	gprint(f"Copied code to {code_directory}")
 	file_utilities.execute_command(code_directory, *args.compile_command)
-	print(f"Compiled with {args.compile_command}")
+	gprint(f"Compiled with {args.compile_command}")
 	executable_path = os.path.join(code_directory, args.executable)
-	print(f"Running {executable_path}…")
+	gprint(f"Running {executable_path}…")
 
 	commandCenter = command_center.CommandCenter(modelQuerier, code_directory, args.compile_command)
 	if args.context_identifier:
 		modelQuerier.load_context(args.context_identifier)
 	
 	session = debugging.DebuggingSession(executable_path)
-	session.start(stop_handler=commandCenter.on_stop, pause_at_start=False, working_directory=code_directory)
+	session.start(pause_at_start=False, working_directory=code_directory)
+	
+	while True:
+		gprint(f"Process status: {session.process}")
+		if session.has_exited():
+			print(f"Process exited with return code {session.exit_status_code()}")
+			break
+		commandCenter.on_stop(session)
 
 if __name__ == "__main__":
 	main()

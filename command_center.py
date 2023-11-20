@@ -32,6 +32,9 @@ class CommandCenter:
 			if len(command_output.strip()) == 0:
 				command_output = "The command produced no output."
 			print(f"***Command from model: {colored(type, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
+			
+			if debug_session.has_exited():
+				break
 			# print(f"State: {debug_session.process.GetState()}")
 			# print(f"Output: \"{command_output}\"")
 			# print(f"Stripped: {command_output.strip()}")

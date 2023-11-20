@@ -9,6 +9,7 @@ import json
 import difflib
 import file_utilities
 import uuid
+import pprint
 from termcolor import colored
 
 class AIModelQuerier(ABC):
@@ -48,7 +49,7 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing commands, explain your reasoning about what command should be issued next and why it will help with the debugging of the process."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing each command you must explain your reasoning about what command should be issued next and why it will help with the debugging of the process. Include this explanation even if you have not done so in previous responses."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
 		
@@ -72,7 +73,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def __init__(self, model_identifier: str):
 		super().__init__(model_identifier)
 		initial_prompt = AIModelQuerier.initial_prompt()
-		print(f"*** Initial prompt: {initial_prompt}")
+		print(f"***Initial prompt: {colored(initial_prompt, 'cyan')}")
 		self.messages = [{"role": "system", "content": initial_prompt}]
 		self._pending_context = []
 		self._output_context_identifier = uuid.uuid4()
@@ -285,12 +286,15 @@ class OpenAIModelQuerier(AIModelQuerier):
 		stripped_content = []
 		
 		for entry in assistant_content[:-1]:
+			# print(f"Entry: {entry}")
 			if entry.get('role') == 'assistant' and 'content' in entry and len(entry) > 2:
 				entry.pop('content')
 			if 'role' in entry:
 				stripped_content.append(entry)
-		stripped_content.append(assistant_content[-1])
-		print(f"Stripped content: {stripped_content}")
+		if len(assistant_content) > 1:
+			stripped_content.append(assistant_content[-1])
+		# print(f"Stripped content:")
+		# pprint.pprint(stripped_content)
 		return stripped_content
 
 	def get_next_response_from_context(self):
@@ -334,9 +338,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def get_output(self, input, base_path):
 		prompt = input
 		input_messages = self.strip_assistant_content(self.messages)
-		print(f"***Input to model:\n{prompt}")
-		# print(f"Input messages: {input_messages}")
-		# Send the prompt to the OpenAI API
+		# print(f"***Input to model:\n{prompt}")
 
 		new_message = {"role": "user", "content": prompt}
 		self.messages.append(new_message)
@@ -358,13 +360,16 @@ class OpenAIModelQuerier(AIModelQuerier):
 			# create variables to collect the stream of chunks
 			collected_chunks = []
 			
-			print("***Streamed response from model: ", end = "")
+			printed_response_header = False
 			# iterate through the stream of events
 			for chunk in response:
 				collected_chunks.append(chunk.choices[0])  # save the event response
 				chunk_message = chunk['choices'][0]  # extract the message
 				
 				if chunk_message.delta.get("content"):
+					if not printed_response_header:
+						print("***Streamed response from model: ", end = "")
+						printed_response_header = True
 					print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
 
 			print("")
@@ -378,7 +383,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		self.save_context(self._output_context_identifier)
 		interimUUID = uuid.uuid4()
 		self.save_context(interimUUID)
-		print(f"Saved interim state as {interimUUID}")
+		print(colored(f"Saved interim state as {interimUUID}", 'light_grey'))
 		# print(response)
 
 		# if response_message.get("content"):
@@ -386,7 +391,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 		if response_message.get("function_call"):
 			function_call = response_message["function_call"]
-			print(function_call)
+			# print(f"***Function call:\n{function_call}")
 			function_name = function_call["name"]
 			function_arguments = json.loads(function_call["arguments"])
 			if function_name == "run_debugger_command":
