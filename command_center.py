@@ -77,13 +77,13 @@ class PatchCommand(Command):
 			compileCommand = CompileCommand({}, self.globalContext)
 			compileCommand.run()
 			self.success = compileCommand.success
-			self.command_output = f"{self.command_output}\n\n{compileCommand.command_output}"
-
 			if self.success:
 				restartCommand = RestartCommand({}, self.globalContext)
 				restartCommand.run()
 				self.success = restartCommand.success
-				self.command_output = f"{self.command_output}\n\n{restartCommand.command_output}"
+				self.command_output = f"{self.command_output}\n{restartCommand.command_output}"
+			else:
+				self.command_output = f"{self.command_output}\n{compileCommand.command_output}"
 			
 		else:
 			self.command_output = f"Applying the patch failed.\nPatch:\n{self.context}\n\nError: {command_output}"

@@ -281,16 +281,17 @@ class OpenAIModelQuerier(AIModelQuerier):
 	
 		return "\n".join(diffs)
 
-	def strip_assistant_content(self, data):
-		stripped_data = []
+	def strip_assistant_content(self, assistant_content):
+		stripped_content = []
 		
-		for entry in data:
+		for entry in assistant_content[:-1]:
 			if entry.get('role') == 'assistant' and 'content' in entry and len(entry) > 2:
 				entry.pop('content')
 			if 'role' in entry:
-				stripped_data.append(entry)
-					
-		return stripped_data
+				stripped_content.append(entry)
+		stripped_content.append(assistant_content[-1])
+		print(f"Stripped content: {stripped_content}")
+		return stripped_content
 
 	def get_next_response_from_context(self):
 		response = None
