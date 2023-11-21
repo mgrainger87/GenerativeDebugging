@@ -12,6 +12,13 @@ import uuid
 import pprint
 from termcolor import colored
 
+class FunctionCall():
+	def __init__(self, type, function_identifier, call_identifier, context):
+		self.type = type
+		self.function_identifier = function_identifier
+		self.call_identifier = call_identifier
+		self.context = context
+
 class AIModelQuerier(ABC):
 	"""
 	Abstract base class for AI models.
@@ -111,79 +118,88 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 		return ('', response)
 
-	def get_functions(self):
+	def get_tools(self):
 		return [
 			{
-				"name": "run_debugger_command",
-				"description": "Run a command using the lldb debugger.",
-				"parameters": {
-					"type": "object",
-					"properties": {
-						"cmd": {
-							"type": "string",
-							"description": "The command to run.",
+				"type": "function",
+				"function":  {
+					"name": "run_debugger_command",
+					"description": "Run a command using the lldb debugger.",
+					"parameters": {
+						"type": "object",
+						"properties": {
+							"cmd": {
+								"type": "string",
+								"description": "The command to run.",
+							},
 						},
+						"required": ["cmd"],
 					},
-					"required": ["cmd"],
-				},
+				}
 			},
 			{
-				"name": "modify_code",
-				"description": "Modify the source code, recompile, and restart the debugger to test changes.",
-				"parameters": {
-					"type": "object",
-					"properties": {
-						"file_path": {
-							"type": "string",
-							"description": "The path of the file to modify as shown in the debugger output.",
-						},
-						"changes": {
-							"type": "array",
-							"items": {
-								"type": "object",
-								"properties": {
-									"from-file-range": {
-										"type": "object",
-										"properties": {
-											"start-line": {
-												"type": "integer",
-												"description": "The first line in the original file that should be replaced. Line numbers start at 1.",
+				"type": "function",
+				"function": {
+					"name": "modify_code",
+					"description": "Modify the source code, recompile, and restart the debugger to test changes.",
+					"parameters": {
+						"type": "object",
+						"properties": {
+							"file_path": {
+								"type": "string",
+								"description": "The path of the file to modify as shown in the debugger output.",
+							},
+							"changes": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"from-file-range": {
+											"type": "object",
+											"properties": {
+												"start-line": {
+													"type": "integer",
+													"description": "The first line in the original file that should be replaced. Line numbers start at 1.",
+												},
+												"code": {
+													"type": "string",
+													"description": "The code that should be replaced by the code in to-file-range.",
+												}
 											},
-											"code": {
-												"type": "string",
-												"description": "The code that should be replaced by the code in to-file-range.",
-											}
+											"required": ["start-line", "code"]
 										},
-										"required": ["start-line", "code"]
-									},
-									"to-file-range": {
-										"type": "object",
-										"properties": {
-											"start-line": {
-												"type": "integer",
-												"description": "The first line in the updated file that should be replaced. This should be the line number after previous changes in the array are applied. Line numbers start at 1.",
+										"to-file-range": {
+											"type": "object",
+											"properties": {
+												"start-line": {
+													"type": "integer",
+													"description": "The first line in the updated file that should be replaced. This should be the line number after previous changes in the array are applied. Line numbers start at 1.",
+												},
+												"code": {
+													"type": "string",
+													"description": "The code to replace the code in from-file-range.",
+												}
 											},
-											"code": {
-												"type": "string",
-												"description": "The code to replace the code in from-file-range.",
-											}
+											"required": ["start-line", "code"]
 										},
-										"required": ["start-line", "code"]
-									},
-
+					
+									}
 								}
 							}
-						}
+						},
+						"required": ["file_path", "changes"]
 					},
-					"required": ["file_path", "changes"]
-				},
+				}
 			},
 			{
-				"name": "restart",
-				"description": "Restart debugging from the beginning.",
-				"parameters": {
-					"type": "object",
-					"properties": {}
+				"type": "function",
+				"function": {
+					"name": "restart",
+					"description": "Restart debugging from the beginning.",
+					"parameters": {
+						"type": "object",
+						"properties": {}
+					}					
 				}
 			},
 		]
@@ -309,7 +325,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				response = next_message
 			self._pending_context.pop(0)
 		return response
-		
+	
 	def merge_chunks(self, chunks):
 		# Function to recursively merge dictionaries
 		def merge_dict(d1, d2):
@@ -318,7 +334,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 					if isinstance(d1[key], dict) and isinstance(d2[key], dict):
 						merge_dict(d1[key], d2[key])
 					elif isinstance(d1[key], list) and isinstance(d2[key], list):
-						d1[key].extend(d2[key])
+						d1[key] = merge_list(d1[key], d2[key])
 					elif isinstance(d1[key], str) and isinstance(d2[key], str):
 						d1[key] += d2[key]
 					else:
@@ -326,28 +342,90 @@ class OpenAIModelQuerier(AIModelQuerier):
 						d1[key] = d2[key]
 				else:
 					d1[key] = d2[key]
-		
+	
+		# Function to deeply merge lists, handling arbitrary depths of nested lists and dictionaries
+		def merge_list(l1, l2):
+			merged = []
+			temp_dict = {}
+	
+			# Combine the lists for processing
+			combined_list = l1 + l2
+			for item in combined_list:
+				if isinstance(item, dict) and 'index' in item:
+					index = item['index']
+					if index not in temp_dict:
+						temp_dict[index] = item.copy()
+					else:
+						merge_dict(temp_dict[index], item)
+				elif isinstance(item, list):
+					# Find a matching list and merge
+					list_match = next((elem for elem in merged if isinstance(elem, list)), None)
+					if list_match:
+						merged[merged.index(list_match)] = merge_list(list_match, item)
+					else:
+						merged.append(item)
+				else:
+					# For non-dictionary and non-list items, simply append if not already present
+					if item not in merged:
+						merged.append(item)
+	
+			# Append consolidated dictionaries from temp_dict to merged list
+			for item in temp_dict.values():
+				merged.append(item)
+	
+			return merged
+	
 		# Initialize an empty dictionary to store the merged content
 		merged_object = {}
-		
+	
 		# Iterate through the list of chunks
 		for obj in chunks:
 			obj_delta = obj['delta']  # Access the delta dict
-		
+	
 			# Use the recursive merge function
 			merge_dict(merged_object, obj_delta)
-		
+	
 		return merged_object
+	# 
+	# def merge_chunks(self, chunks):
+	# 	# Function to recursively merge dictionaries
+	# 	def merge_dict(d1, d2):
+	# 		for key in d2:
+	# 			if key in d1:
+	# 				if isinstance(d1[key], dict) and isinstance(d2[key], dict):
+	# 					merge_dict(d1[key], d2[key])
+	# 				elif isinstance(d1[key], list) and isinstance(d2[key], list):
+	# 					d1[key].extend(d2[key])
+	# 				elif isinstance(d1[key], str) and isinstance(d2[key], str):
+	# 					d1[key] += d2[key]
+	# 				else:
+	# 					# If the types are mismatched or non-mergable, overwrite
+	# 					d1[key] = d2[key]
+	# 			else:
+	# 				d1[key] = d2[key]
+	# 	
+	# 	# Initialize an empty dictionary to store the merged content
+	# 	merged_object = {}
+	# 	
+	# 	# Iterate through the list of chunks
+	# 	for obj in chunks:
+	# 		obj_delta = obj['delta']  # Access the delta dict
+	# 	
+	# 		# Use the recursive merge function
+	# 		merge_dict(merged_object, obj_delta)
+	# 	
+	# 	return merged_object
 
-	def get_output(self, input, base_path):
-		prompt = input
-		input_messages = self.strip_assistant_content(self.messages)
-		# print(f"***Input to model:\n{prompt}")
-
-		new_message = {"role": "user", "content": prompt}
+	def append_function_call_response(self, function_call, response):
+		new_message = {"role": "tool", "name": function_call.function_identifier, "tool_call_id": function_call.call_identifier, "content": response}
 		self.messages.append(new_message)
-		input_messages.append(new_message)
 		
+	def append_user_message(self, message):
+		new_message = {"role": "user", "content": message}
+		self.messages.append(new_message)
+
+	def get_output(self, base_path):
+		input_messages = self.strip_assistant_content(self.messages)		
 		# Transient system message
 		input_messages.append({"role": "system", "content": AIModelQuerier.transient_prompt()})
 				
@@ -359,7 +437,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				model=self.model_identifier,
 				max_tokens=1000,
 				messages=input_messages,
-				functions=self.get_functions(),
+				tools=self.get_tools(),
 				# function_call={"name": "run_debugger_command"},
 				stream=True
 			)
@@ -379,11 +457,9 @@ class OpenAIModelQuerier(AIModelQuerier):
 						printed_response_header = True
 					print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
 
-			print("")
+			# print(f"collected chunks: {collected_chunks}")
 			# print the time delay and text received
-			response_message = self.merge_chunks(collected_chunks)
-			# print(f"Merged: {response_message}")
-			
+			response_message = self.merge_chunks(collected_chunks)			
 		
 		# Extract the generated code
 		self.messages.append(response_message)
@@ -391,30 +467,30 @@ class OpenAIModelQuerier(AIModelQuerier):
 		interimUUID = uuid.uuid4()
 		self.save_context(interimUUID)
 		print(colored(f"Saved interim state as {interimUUID}", 'light_grey'))
-		# print(response)
+		print(response_message)
 
-		# if response_message.get("content"):
-		# 	print(f"***Response:\n{response_message.get('content')}")
-		
-		if response_message.get("function_call"):
-			function_call = response_message["function_call"]
-			print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
-			function_name = function_call["name"]
-			function_arguments = json.loads(function_call["arguments"])
-			if function_name == "run_debugger_command":
-				command = function_arguments["cmd"]
-				return "lldb", command
-			elif function_name == "modify_code":
-				success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
-				
-				if success:					
-					return "patch", result
+		function_calls = []
+		if response_message.get("tool_calls"):
+			for tool_call in response_message["tool_calls"]:
+				function_call = tool_call["function"]
+				call_id = tool_call["id"]
+				print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
+				function_name = function_call["name"]
+				function_arguments = json.loads(function_call["arguments"])
+				if function_name == "run_debugger_command":
+					command = function_arguments["cmd"]
+					function_calls.append(FunctionCall("lldb", function_name, call_id, command))
+				elif function_name == "modify_code":
+					success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
+					
+					if success:
+						function_calls.append(FunctionCall("patch", function_name, call_id, result))			
+					else:
+						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))			
 				else:
-					return "error", f"Error generating diff for this change: {result}"
-			else:
-				return function_name, None
-		else:
-			return "none", None
+					function_calls.append(FunctionCall("none", function_name, call_id, None))			
+		
+		return function_calls
 # 
 # 		print(f"***Response:\n{response}")
 # 		type, code = self.extract_code_and_type(response)

@@ -15,30 +15,29 @@ class CommandCenter:
 		self.globalContext = GlobalContext(workingDirectory, compileCommand)
 	
 	def on_stop(self, debug_session):
-		stop_info = debug_session.stop_info()
-		
-		# FIXME
+		command_output = debug_session.stop_info()
+		self.modelQuerier.append_user_message(command_output)
 		self.globalContext.debugSession = debug_session
 		
 		# Process the stop information or print it
 		# print(stop_info)
-		type, context = self.modelQuerier.get_output(stop_info, self.globalContext.workingDirectory)
 		while True:
-			cmd = Command.get_command_object(type, context, self.globalContext)
-			cmd.run()
-			
-			printable_context = '\n' + colored(textwrap.indent(context, '\t'), 'blue') if context else "(none)"
-			command_output = cmd.command_output
-			if len(command_output.strip()) == 0:
-				command_output = "The command produced no output."
-			print(f"***Command from model: {colored(type, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
-			
 			if debug_session.has_exited():
 				break
-			# print(f"State: {debug_session.process.GetState()}")
-			# print(f"Output: \"{command_output}\"")
-			# print(f"Stripped: {command_output.strip()}")
-			type, context = self.modelQuerier.get_output(command_output, self.globalContext.workingDirectory)
+
+			function_calls = self.modelQuerier.get_output(self.globalContext.workingDirectory)
+
+			for function_call in function_calls:
+				cmd = Command.get_command_object(function_call.type, function_call.context, self.globalContext)
+				cmd.run()
+				
+				printable_context = '\n' + colored(textwrap.indent(function_call.context, '\t'), 'blue') if function_call.context else "(none)"
+				command_output = cmd.command_output
+				if len(command_output.strip()) == 0:
+					command_output = "The command produced no output."
+				print(f"***Command from model: {colored(type, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
+				self.modelQuerier.append_function_call_response(function_call, command_output)
+			
 			
 
 				
