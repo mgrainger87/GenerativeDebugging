@@ -19,6 +19,9 @@ class FunctionCall():
 		self.call_identifier = call_identifier
 		self.context = context
 
+	def __str__(self):
+		return f"FunctionCall(type={self.type}, function_identifier={self.function_identifier}, call_identifier={self.call_identifier}, context={self.context})"
+
 class AIModelQuerier(ABC):
 	"""
 	Abstract base class for AI models.
@@ -457,6 +460,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 						printed_response_header = True
 					print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
 
+			if printed_response_header:
+				print("")
 			# print(f"collected chunks: {collected_chunks}")
 			# print the time delay and text received
 			response_message = self.merge_chunks(collected_chunks)			
@@ -467,14 +472,14 @@ class OpenAIModelQuerier(AIModelQuerier):
 		interimUUID = uuid.uuid4()
 		self.save_context(interimUUID)
 		print(colored(f"Saved interim state as {interimUUID}", 'light_grey'))
-		print(response_message)
+		# print(response_message)
 
 		function_calls = []
 		if response_message.get("tool_calls"):
 			for tool_call in response_message["tool_calls"]:
 				function_call = tool_call["function"]
 				call_id = tool_call["id"]
-				print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
+				# print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
 				function_name = function_call["name"]
 				function_arguments = json.loads(function_call["arguments"])
 				if function_name == "run_debugger_command":
@@ -486,7 +491,9 @@ class OpenAIModelQuerier(AIModelQuerier):
 					if success:
 						function_calls.append(FunctionCall("patch", function_name, call_id, result))			
 					else:
-						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))			
+						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))
+				elif function_name == "restart":
+					function_calls.append(FunctionCall("restart", function_name, call_id, None))
 				else:
 					function_calls.append(FunctionCall("none", function_name, call_id, None))			
 		

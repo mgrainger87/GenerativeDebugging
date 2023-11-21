@@ -35,7 +35,7 @@ class CommandCenter:
 				command_output = cmd.command_output
 				if len(command_output.strip()) == 0:
 					command_output = "The command produced no output."
-				print(f"***Command from model: {colored(type, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
+				print(f"***Command from model: {colored(function_call, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
 				self.modelQuerier.append_function_call_response(function_call, command_output)
 			
 			
