@@ -49,9 +49,13 @@ class AIModelQuerier(ABC):
 	
 	@classmethod
 	def initial_prompt(cls):
-		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. Before issuing each command you must explain your reasoning about what command should be issued next and why it will help with the debugging of the process. Include this explanation even if you have not done so in previous responses."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
+		return "Act as a human who is using the lldb debugger to identify and fix crashes in a running process. You will be provided with output from lldb, and are able to issue commands to lldb to identify the issue. You can also apply patches."#Issue only one command per message. Enclose that command in a Markdown code block. Do not include the (lldb) command-line prompt or anything else in the Markdown code block.\n\nOnce you have identified the problem, provide a patch that can be applied using the diff tool to fix the issue. Enclose the diff in a Markdown code block marked with 'diff'. Format the diff so that it can be applied directly via `patch -p0` applied in the same directory as the file paths are relative to."
 		
 		#\n\nThe debugger is already running and has stopped at the beginning of the program so that you can inspect the program and set breakpoints as necessary.\n\n
+		
+	@classmethod
+	def transient_prompt(cls):
+		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process."
 		
 	def handle_debugger_output(cls, output):
 		return self.get_output(output)
@@ -344,15 +348,18 @@ class OpenAIModelQuerier(AIModelQuerier):
 		self.messages.append(new_message)
 		input_messages.append(new_message)
 		
+		# Transient system message
+		input_messages.append({"role": "system", "content": AIModelQuerier.transient_prompt()})
+				
 		response_message = self.get_next_response_from_context()
 		if response_message is not None:
-			print(f"***Using response from context")
+			print(f"***Using response from context: {response_message.get('content')}")
 		else:
 			response = openai.ChatCompletion.create(
 				model=self.model_identifier,
 				max_tokens=1000,
 				messages=input_messages,
-				functions = self.get_functions(),
+				functions=self.get_functions(),
 				# function_call={"name": "run_debugger_command"},
 				stream=True
 			)
@@ -391,7 +398,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		
 		if response_message.get("function_call"):
 			function_call = response_message["function_call"]
-			# print(f"***Function call:\n{function_call}")
+			print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
 			function_name = function_call["name"]
 			function_arguments = json.loads(function_call["arguments"])
 			if function_name == "run_debugger_command":

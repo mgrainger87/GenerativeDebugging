@@ -33,12 +33,18 @@ def execute_command(directory_path, command, *args):
 	result = subprocess.run(full_command, cwd=directory_path, text=True, capture_output=True)
 	
 	return result.returncode, result.stdout, result.stderr
-
-import subprocess
 	
 def apply_patch_from_string(working_directory, patch_string):
-	try:        
-		# Apply the patch using -p0, patch string is piped as input
+	try:
+		# Dry run to check if the patch can be applied
+		dry_run_process = subprocess.Popen(['patch', '-s', '-p0', '--dry-run', '--batch'], cwd=working_directory, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		dry_run_stdout, dry_run_stderr = dry_run_process.communicate(input=patch_string.encode())
+
+		if dry_run_process.returncode != 0:
+			# Dry run failed, patch cannot be applied cleanly
+			return (False, f'An error occurred ({dry_run_process.returncode}) when attempting to apply the patch: {dry_run_stdout.decode()} {dry_run_stderr.decode()}\n\nThe patch has not been applied.')
+
+		# Actual patch application since dry run was successful
 		process = subprocess.Popen(['patch', '-s', '-p0', '--batch'], cwd=working_directory, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		stdout, stderr = process.communicate(input=patch_string.encode())
 
