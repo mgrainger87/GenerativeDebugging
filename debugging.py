@@ -11,13 +11,15 @@ class DebuggingSession:
 		if not self.target:
 			raise Exception(f"Failed to create target for executable {executable_path}")
 
-	def start(self, pause_at_start=False, entry_function_name="main", working_directory=None):
+	def start(self, pause_at_start=False, entry_function_name="main", working_directory=None, use_libgmalloc=True):
 		if pause_at_start:
 			self.target.BreakpointCreateByName(entry_function_name)
 
 		launch_info = lldb.SBLaunchInfo(self.args)
 		if working_directory:
 			launch_info.SetWorkingDirectory(working_directory)
+		if use_libgmalloc:
+			launch_info.SetEnvironmentEntries(["DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib"], True)
 
 		error = lldb.SBError()
 		self.__process = self.target.Launch(launch_info, error)
