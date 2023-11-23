@@ -39,6 +39,16 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 
 	return files_to_check
 
+class TestCase:
+	def __init__(self, file_path, function_name, file_extension, header_lines):
+		self.file_path = file_path
+		self.function_name = function_name
+		self.file_extension = file_extension
+		self.header_lines = header_lines
+		
+	def __str__(self):
+		return f"{self.file_path} {self.function_name} {self.file_extension}"
+
 # class that hold the calls to the testcases
 class FunctionCallLines:
 	def __init__(self):
@@ -52,59 +62,13 @@ class FunctionCallLines:
 		self.cpp_h_bad_lines = []
 		self.cpp_h_good_lines = []
 
-def generate_calls_to_fxs(testcase_files):
-
-	fcl = FunctionCallLines()
-	for fullfilepath in testcase_files:
-
-		filename = os.path.basename(fullfilepath)
-
-		# do different things if its a c or cpp file
-		match = re.search("^(?P<root>CWE(\d+).*__.*_\d+)((?P<letter>[a-z]*)|_(bad|good\d+))(\.c|\.cpp)$", filename)
-
-		if filename.endswith(".cpp"):
-			root = match.group("root") # we don't use the letter in the namespace 
-			bad = "bad();"
-			good = "good();"
-
-			fcl.cpp_bad_lines.append("\tprintLine(\"Calling " + root + "::" + bad + "\");");
-			fcl.cpp_bad_lines.append("\t" + root + "::" + bad + "\n")
-			fcl.cpp_h_bad_lines.append("\tnamespace " + root + " { void " + bad + "}\n")
-
-			fcl.cpp_good_lines.append("\tprintLine(\"Calling " + root + "::" + good + "\");");
-			fcl.cpp_good_lines.append("\t" + root + "::" + good + "\n")
-			fcl.cpp_h_good_lines.append("\tnamespace " + root + " { void " + good + "}\n")
-
-		elif filename.endswith(".c"):
-			# we only want to add the "a" files
-			if match.group("letter") != "" and match.group("letter") != "a":
-				py_common.print_with_timestamp("Ignored file: " + filename)
-				continue
-
-			root = match.group("root")
-			bad = "_bad();"
-			good = "_good();"
-
-			fcl.c_bad_lines.append("\tprintLine(\"Calling " + root + bad + "\");");
-			fcl.c_bad_lines.append("\t" + root + bad + "\n")
-			fcl.c_h_bad_lines.append("\tvoid " + root + bad + "\n")
-			
-			# don't create good if template file contains point-flaw-badonly.
-			file_contents = py_common.open_file_and_get_contents(fullfilepath)
-			result = re.search("Template File: point-flaw-badonly", file_contents, re.IGNORECASE)
-			if result == None:
-				fcl.c_good_lines.append("\tprintLine(\"Calling " + root + good + "\");");
-				fcl.c_good_lines.append("\t" + root + good + "\n")
-				fcl.c_h_good_lines.append("\tvoid " + root + good + "\n")
-						
-		else:
-			raise Exception("filename ends with something we don't handle!: " + fullfilepath)
-
-	return fcl
+def writeTestCase(testCase):
+	# Write main file
+	# write header file
 
 def generate_calls_to_linux_fxs(testcase_files):
-
 	fcl = FunctionCallLines()
+	testCases = []
 	for fullfilepath in testcase_files:
 
 		filename = os.path.basename(fullfilepath)
@@ -127,6 +91,10 @@ def generate_calls_to_linux_fxs(testcase_files):
 				fcl.cpp_good_lines.append("\tprintLine(\"Calling " + root + "::" + good + "\");");
 				fcl.cpp_good_lines.append("\t" + root + "::" + good + "\n")
 				fcl.cpp_h_good_lines.append("\tnamespace " + root + " { void " + good + "}\n")
+				
+				function_name = root + "::" + bad
+				header_lines = "\tnamespace " + root + " { void " + bad + "}\n"
+				testCases.append(TestCase(fullfilepath, function_name, "cpp", header_lines))
 
 			elif filename.endswith(".c"):
 				# we only want to add the "a" files
@@ -141,6 +109,10 @@ def generate_calls_to_linux_fxs(testcase_files):
 				fcl.c_bad_lines.append("\tprintLine(\"Calling " + root + bad + "\");");
 				fcl.c_bad_lines.append("\t" + root + bad + "\n")
 				fcl.c_h_bad_lines.append("\tvoid " + root + bad + "\n")
+				
+				function_name = root + bad
+				header_lines = "\tvoid " + root + bad + "\n"
+				testCases.append(TestCase(fullfilepath, function_name, "c", header_lines))
 
 				# don't create good if template file contains point-flaw-badonly.
 				file_contents = py_common.open_file_and_get_contents(fullfilepath)
@@ -152,7 +124,7 @@ def generate_calls_to_linux_fxs(testcase_files):
 				
 			else:
 				raise Exception("filename ends with something we don't handle!: " + fullfilepath)
-
+	print(testCases)
 	return fcl
 
 def update_file(file_path, file, tag_start, tag_end, lines):
@@ -233,9 +205,7 @@ def update_main_cpp_and_testcases_h(testcaseregexes):
 	testcases_dot_h = "testcases.h"
 
 	# generate the lines that call the testcase fx's
-	fcl = generate_calls_to_fxs(testcase_files)
 	linux_fcl = generate_calls_to_linux_fxs(testcase_files)
-	print(linux_fcl)
 	return
 
 	# update main.cpp
