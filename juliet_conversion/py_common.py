@@ -260,7 +260,7 @@ def get_primary_testcase_filename_regex():
 		"(?!8[12]_bad)" + \
 		"(?P<flow_variant_id>\d+)" + \
 		"_?" + \
-		"(?P<subfile_id>a|(_bad))?" + \
+		"(?P<subfile_id>[a-z]|(_bad))?" + \
 		"\." + \
 		"(?P<extension>c|cpp|java)$"
 		

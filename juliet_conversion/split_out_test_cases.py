@@ -7,12 +7,12 @@
 # by create_per_cwe_files.py, create_single_batch_file.py, and create_single_Makefile.py.
 #
 
-import sys,os,re
-
-# add parent directory to search path so we can use py_common
-sys.path.append("..")
-
+import sys
+import os
+import re
+import shutil
 import py_common
+import subprocess
 
 def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 
@@ -24,14 +24,17 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 			result = re.search(py_common.get_primary_testcase_filename_regex(), name, re.IGNORECASE)
 
 			if result != None:
-								if testcaseregexes == None:
-										files_to_check.append(os.path.realpath(os.path.join(root,name)))
-								else:
-										for testcaseregex in testcaseregexes:
-												if re.match('.*' + testcaseregex +'.*', name):
-														files_to_check.append(os.path.realpath(os.path.join(root,name)))
+				if testcaseregexes == None:
+					files_to_check.append(os.path.realpath(os.path.join(root,name)))
+				else:
+					for testcaseregex in testcaseregexes:
+						if re.match('.*' + testcaseregex +'.*', name):
+							files_to_check.append(os.path.realpath(os.path.join(root,name)))
 			else:
 				pass
+				
+		if len(files_to_check) > 100:
+			break
 				
 		# don't enumerate files in support directories
 		if 'testcasesupport' in dirs:
@@ -40,7 +43,8 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 	return files_to_check
 
 class TestCase:
-	def __init__(self, file_path, function_name, file_extension, header_lines):
+	def __init__(self, name, file_path, function_name, file_extension, header_lines):
+		self.name = name
 		self.file_path = file_path
 		self.function_name = function_name
 		self.file_extension = file_extension
@@ -49,25 +53,91 @@ class TestCase:
 	def __str__(self):
 		return f"{self.file_path} {self.function_name} {self.file_extension}"
 
-# class that hold the calls to the testcases
-class FunctionCallLines:
-	def __init__(self):
-		self.c_bad_lines = []
-		self.c_good_lines = []
-		self.cpp_bad_lines = []
-		self.cpp_good_lines = []
+MAIN_FILE_TEMPLATE = """#include <time.h>
+#include <stdlib.h>
 
-		self.c_h_bad_lines = []
-		self.c_h_good_lines = []
-		self.cpp_h_bad_lines = []
-		self.cpp_h_good_lines = []
+<prototype>
 
-def writeTestCase(testCase):
-	# Write main file
-	# write header file
+int main(int argc, char * argv[]) {
+	/* seed randomness */
+	srand( (unsigned)time(NULL) );
+	<function_call>
+}
+"""
 
-def generate_calls_to_linux_fxs(testcase_files):
-	fcl = FunctionCallLines()
+MAKEFILE_TEMPLATE = """# Variables
+CC = <compiler>
+CFLAGS = -g
+SOURCES = <source files>
+TARGET = main
+
+# Targets and Rules
+all: $(TARGET)
+
+$(TARGET): $(SOURCES)
+	$(CC) $(CFLAGS) $(SOURCES) -o $(TARGET)
+
+clean:
+	rm -f $(TARGET)
+"""
+
+def write_test_case(testCase, base_path, copy_paths):
+	def comment_remover(text):
+		def replacer(match):
+			s = match.group(0)
+			if s.startswith('/'):
+				return " "  # note: a space and not an empty string
+			else:
+				return s
+		pattern = re.compile(
+			r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+			re.DOTALL | re.MULTILINE
+		)
+		return re.sub(pattern, replacer, text)
+
+	subdir_path = os.path.join(base_path, testCase.name)
+	os.makedirs(subdir_path, exist_ok=True)
+	
+	main_file_name = "main." + testCase.file_extension
+	file_path = os.path.join(subdir_path, main_file_name)
+	
+	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", testCase.header_lines).replace("<function_call>", testCase.function_name)
+	
+	with open(file_path, 'w') as file:
+		file.write(main_contents)
+	
+	test_case_output_path = os.path.join(subdir_path, os.path.basename(testCase.file_path))
+	
+	# Run unifdef
+	cmd = f"unifdef -DOMITGOOD -UOMITBAD -UINCLUDEMAIN -U_WIN32 {testCase.file_path}"
+	result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+	if result.returncode != 0 and result.returncode != 1:
+		print(f"Error processing {file_path}: {result.stderr}")
+		return
+	
+	cleaned_code = comment_remover(result.stdout)
+	with open(test_case_output_path, 'w') as file:
+		file.write(cleaned_code)
+
+	
+	# Write other files
+	for path in copy_paths:
+		dest = os.path.join(subdir_path, os.path.basename(path))
+		shutil.copy2(path, dest)
+
+	all_source_files = []
+	for file in os.listdir(subdir_path):
+		if file.endswith('.c') or file.endswith('.cpp'):
+			all_source_files.append(file)
+
+	# Write Makefile
+	compiler = "clang++" if testCase.file_extension == ".cpp" else "clang"
+	makefile_contents = MAKEFILE_TEMPLATE.replace("<source files>", " ".join(all_source_files)).replace("<compiler>", compiler)
+
+	with open(os.path.join(subdir_path, "Makefile"), 'w') as file:
+		file.write(makefile_contents)
+
+def generate_test_cases(testcase_files):
 	testCases = []
 	for fullfilepath in testcase_files:
 
@@ -78,144 +148,55 @@ def generate_calls_to_linux_fxs(testcase_files):
 			
 			# do different things if its a c or cpp file
 			match = re.search("^(?P<root>CWE(\d+).*__.*_\d+)((?P<letter>[a-z]*)|_(bad|good\d+))(\.c|\.cpp)$", filename)
+			print(filename)
 
 			if filename.endswith(".cpp"):
 				root = match.group("root") # we don't use the letter in the namespace 
 				bad = "bad();"
-				good = "good();"
 
-				fcl.cpp_bad_lines.append("\tprintLine(\"Calling " + root + "::" + bad + "\");");
-				fcl.cpp_bad_lines.append("\t" + root + "::" + bad + "\n")
-				fcl.cpp_h_bad_lines.append("\tnamespace " + root + " { void " + bad + "}\n")
-
-				fcl.cpp_good_lines.append("\tprintLine(\"Calling " + root + "::" + good + "\");");
-				fcl.cpp_good_lines.append("\t" + root + "::" + good + "\n")
-				fcl.cpp_h_good_lines.append("\tnamespace " + root + " { void " + good + "}\n")
-				
 				function_name = root + "::" + bad
 				header_lines = "\tnamespace " + root + " { void " + bad + "}\n"
-				testCases.append(TestCase(fullfilepath, function_name, "cpp", header_lines))
+				testCases.append(TestCase(root, fullfilepath, function_name, "cpp", header_lines))
 
 			elif filename.endswith(".c"):
 				# we only want to add the "a" files
-				if match.group("letter") != "" and match.group("letter") != "a":
-					py_common.print_with_timestamp("Ignored file: " + filename)
-					continue
-
+				# if match.group("letter") != "" and match.group("letter") != "a":
+				# 	print("Ignored file: " + filename)
+				# 	continue
 				root = match.group("root")
 				bad = "_bad();"
-				good = "_good();"
 
-				fcl.c_bad_lines.append("\tprintLine(\"Calling " + root + bad + "\");");
-				fcl.c_bad_lines.append("\t" + root + bad + "\n")
-				fcl.c_h_bad_lines.append("\tvoid " + root + bad + "\n")
-				
 				function_name = root + bad
 				header_lines = "\tvoid " + root + bad + "\n"
-				testCases.append(TestCase(fullfilepath, function_name, "c", header_lines))
-
-				# don't create good if template file contains point-flaw-badonly.
-				file_contents = py_common.open_file_and_get_contents(fullfilepath)
-				result = re.search("Template File: point-flaw-badonly", file_contents, re.IGNORECASE)
-				if result == None:
-					fcl.c_good_lines.append("\tprintLine(\"Calling " + root + good + "\");");
-					fcl.c_good_lines.append("\t" + root + good + "\n")
-					fcl.c_h_good_lines.append("\tvoid " + root + good + "\n")
-				
+				testCases.append(TestCase(root, fullfilepath, function_name, "c", header_lines))
 			else:
 				raise Exception("filename ends with something we don't handle!: " + fullfilepath)
-	print(testCases)
-	return fcl
-
-def update_file(file_path, file, tag_start, tag_end, lines):
-
-	full_file_path = os.path.join(file_path, file)
-	file_contents = py_common.open_file_and_get_contents(full_file_path)
-
-	# get contents from start of file up to tag, get contents from end tag
-	# to EOF
-	up_to_tag_start = file_contents.split(tag_start)[0]
-	tag_end_to_eof = file_contents.split(tag_end)[1]
-
-	auto_gen_content = "\n".join(lines)
-
-	# re-build the file with the modified content between the tags
-	modified_file_contents = up_to_tag_start + \
-			tag_start + "\n" + \
-			auto_gen_content + "\n" + \
-			"\t" + tag_end + \
-			tag_end_to_eof
-
-	# write out the new file
-	outfile = os.path.join(file_path, file)
-	py_common.write_file(outfile, modified_file_contents)
-
-def update_main_cpp(file_path, main_dot_cpp, fcl):
-
-	# tags for main.cpp that indicate where to replace text
-	auto_gen_c_good_tag_start = "/* BEGIN-AUTOGENERATED-C-GOOD-FUNCTION-CALLS */"
-	auto_gen_c_good_tag_end = "/* END-AUTOGENERATED-C-GOOD-FUNCTION-CALLS */"
-
-	auto_gen_c_bad_tag_start = "/* BEGIN-AUTOGENERATED-C-BAD-FUNCTION-CALLS */"
-	auto_gen_c_bad_tag_end = "/* END-AUTOGENERATED-C-BAD-FUNCTION-CALLS */"
-
-	auto_gen_cpp_good_tag_start = "/* BEGIN-AUTOGENERATED-CPP-GOOD-FUNCTION-CALLS */"
-	auto_gen_cpp_good_tag_end = "/* END-AUTOGENERATED-CPP-GOOD-FUNCTION-CALLS */"
-
-	auto_gen_cpp_bad_tag_start = "/* BEGIN-AUTOGENERATED-CPP-BAD-FUNCTION-CALLS */"
-	auto_gen_cpp_bad_tag_end = "/* END-AUTOGENERATED-CPP-BAD-FUNCTION-CALLS */"
-
-	# perform the update of main.cpp
-	update_file(file_path, main_dot_cpp, auto_gen_c_good_tag_start, auto_gen_c_good_tag_end, fcl.c_good_lines)
-	update_file(file_path, main_dot_cpp, auto_gen_c_bad_tag_start, auto_gen_c_bad_tag_end, fcl.c_bad_lines)
-	update_file(file_path, main_dot_cpp, auto_gen_cpp_good_tag_start, auto_gen_cpp_good_tag_end, fcl.cpp_good_lines)
-	update_file(file_path, main_dot_cpp, auto_gen_cpp_bad_tag_start, auto_gen_cpp_bad_tag_end, fcl.cpp_bad_lines)
-
-def update_testcases_h(file_path, testcases_dot_h, fcl):
-
-	# tags for testcases.h that indicate where to replace text
-	auto_gen_c_good_h_tag_start = "/* BEGIN-AUTOGENERATED-C-GOOD-FUNCTION-DECLARATIONS */"
-	auto_gen_c_good_h_tag_end = "/* END-AUTOGENERATED-C-GOOD-FUNCTION-DECLARATIONS */"
-
-	auto_gen_c_bad_h_tag_start = "/* BEGIN-AUTOGENERATED-C-BAD-FUNCTION-DECLARATIONS */"
-	auto_gen_c_bad_h_tag_end = "/* END-AUTOGENERATED-C-BAD-FUNCTION-DECLARATIONS */"
-
-	auto_gen_cpp_good_h_tag_start = "/* BEGIN-AUTOGENERATED-CPP-GOOD-FUNCTION-DECLARATIONS */"
-	auto_gen_cpp_good_h_tag_end = "/* END-AUTOGENERATED-CPP-GOOD-FUNCTION-DECLARATIONS */"
-
-	auto_gen_cpp_bad_h_tag_start = "/* BEGIN-AUTOGENERATED-CPP-BAD-FUNCTION-DECLARATIONS */"
-	auto_gen_cpp_bad_h_tag_end = "/* END-AUTOGENERATED-CPP-BAD-FUNCTION-DECLARATIONS */"
-
-	# perform the update of testcases.h
-	update_file(file_path, testcases_dot_h, auto_gen_c_good_h_tag_start, auto_gen_c_good_h_tag_end, fcl.c_h_good_lines)
-	update_file(file_path, testcases_dot_h, auto_gen_c_bad_h_tag_start, auto_gen_c_bad_h_tag_end, fcl.c_h_bad_lines)
-	update_file(file_path, testcases_dot_h, auto_gen_cpp_good_h_tag_start, auto_gen_cpp_good_h_tag_end, fcl.cpp_h_good_lines)
-	update_file(file_path, testcases_dot_h, auto_gen_cpp_bad_h_tag_start, auto_gen_cpp_bad_h_tag_end, fcl.cpp_h_bad_lines)
+	return testCases
 
 def update_main_cpp_and_testcases_h(testcaseregexes):
 
 	# get list of testcase files
 	testcase_location = "/Users/morgang/Downloads/Juliet/testcases"
 	testcase_files = build_list_of_primary_c_cpp_testcase_files(testcase_location, testcaseregexes)
-	# print(testcase_files)
 
 	file_path = "testcasesupport/"
-	main_dot_cpp = "main.cpp"
-	main_linux_dot_cpp = "main_linux.cpp"
 	testcases_dot_h = "testcases.h"
 
 	# generate the lines that call the testcase fx's
-	linux_fcl = generate_calls_to_linux_fxs(testcase_files)
-	return
-
-	# update main.cpp
-	update_main_cpp(file_path, main_dot_cpp, fcl)
-
-	# update testcases.h
-	update_testcases_h(file_path, testcases_dot_h, fcl)
+	testCases = generate_test_cases(testcase_files)
 	
-	# update main_linux.cpp
-	update_main_cpp(file_path, main_linux_dot_cpp, linux_fcl)
+	copy_files = [
+		"io.c",
+		"std_testcase_io.h",
+		"std_testcase.h",
+		"std_thread.h",
+		"std_thread.c",
+	]
+	copy_files = [os.path.join("/Users/morgang/Downloads/Juliet/testcasesupport", p) for p in copy_files]
+	for testCase in testCases:
+		write_test_case(testCase, "/tmp/", copy_files)
+	
+	return
 	
 if __name__ == "__main__":
 
