@@ -33,8 +33,8 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 			else:
 				pass
 				
-		if len(files_to_check) > 100:
-			break
+		# if len(files_to_check) > 100:
+		# 	break
 				
 		# don't enumerate files in support directories
 		if 'testcasesupport' in dirs:
@@ -194,7 +194,7 @@ def update_main_cpp_and_testcases_h(testcaseregexes):
 	]
 	copy_files = [os.path.join("/Users/morgang/Downloads/Juliet/testcasesupport", p) for p in copy_files]
 	for testCase in testCases:
-		write_test_case(testCase, "/tmp/", copy_files)
+		write_test_case(testCase, "/tmp/juliet", copy_files)
 	
 	return
 	
@@ -204,10 +204,7 @@ if __name__ == "__main__":
 
 	if len(sys.argv) > 1:
 		if sys.argv[1] == '-h':
-			sys.stderr.write('Usage: update-main_cpp_and_testcases_h.py (optional regexes of testcases)\nSuch as\n')
-			sys.stderr.write('   update-main_cpp_and_testcases_h.py\n')
-			sys.stderr.write('   update-main_cpp_and_testcases_h.py CWE121')
-			sys.stderr.write('   update-main_cpp_and_testcases_h.py CWE121 CWE122')
+			sys.stderr.write(f'Usage: {sys.argv[0]} (optional regexes of testcases)\n')
 			sys.exit(1)
 		testcaseregexes=sys.argv[1:]
 

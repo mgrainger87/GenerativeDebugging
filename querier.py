@@ -65,7 +65,7 @@ class AIModelQuerier(ABC):
 		
 	@classmethod
 	def transient_prompt(cls):
-		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process."
+		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process. Be sure that the correct frame isselected using 'frame select' before issuing frame-specific commands like 'frame variable' or 'list'."
 		
 	def handle_debugger_output(cls, output):
 		return self.get_output(output)
@@ -236,74 +236,31 @@ class OpenAIModelQuerier(AIModelQuerier):
 			return False, message
 		
 		# Split the source code into lines for easy access
-		source_lines = source_code.splitlines(keepends=True)
+		source_lines = source_code.splitlines()
 		
-		# Step 2: Generate the unified diff with context lines if changes are valid
-		diffs = []
+	    # Initialize to_code as a full copy of source_lines
+		to_code = source_lines.copy()
 		
+		# Apply each change to the to_code list
 		for change in data["changes"]:
-			# Determine the range of lines affected by this change
 			start_line = change["from-file-range"]["start-line"] - 1
-			end_line = start_line + len(change["from-file-range"]["code"].splitlines(keepends=True))
-			
-			# Extract the relevant lines from the source code
-			from_code = [line.rstrip() for line in source_lines[max(0, start_line - context_lines):min(end_line + context_lines, len(source_lines))]]
-			to_code = from_code.copy()
-			
-			# Apply the change to the to_code list, starting from the context lines before the change
-			change_lines = [line.rstrip() for line in change["to-file-range"]["code"].splitlines(keepends=True)]
-			change_start_index = start_line - max(0, start_line - context_lines)
-			for i in range(len(change_lines)):
-				to_code_index = change_start_index + i
-				if to_code_index < len(to_code):
-					to_code[to_code_index] = change_lines[i]
-				else:
-					to_code.append(change_lines[i])
-			
-			# Generate unified diff using difflib with context lines
-			diff = difflib.unified_diff(
-				from_code, 
-				to_code, 
-				fromfile=file_path, 
-				tofile=file_path, 
-				lineterm='',
-				n=context_lines
-			)
-			
-			diffs.extend(diff)
+			end_line = start_line + len(change["from-file-range"]["code"].splitlines())
+		
+			change_lines = change["to-file-range"]["code"].splitlines()
+			to_code[start_line:end_line] = change_lines
+
+		# Generate unified diff using difflib with full source and modified code
+		diff = difflib.unified_diff(
+			source_lines, 
+			to_code, 
+			fromfile=file_path, 
+			tofile=file_path, 
+			lineterm='',
+			n=context_lines
+		)
 		
 		# Return the patch
-		return True, "\n".join(diffs)
-
-	def generate_unified_diff(self, data, base_path):
-		file_path = data["file_path"]
-		diffs = []
-	
-		for change in data["changes"]:
-			from_code = change["from-file-range"]["code"].splitlines(keepends=True)
-			to_code = change["to-file-range"]["code"].splitlines(keepends=True)
-			
-			# Compute the correct start line for the unified diff using the provided start-line
-			start_line = change["from-file-range"]["start-line"] - 1
-			
-			# Add context lines to correctly position the diff
-			context_lines = ["\n" for _ in range(start_line)]
-			from_code = context_lines + from_code
-			to_code = context_lines + to_code
-	
-			# Generate unified diff using difflib without timestamps
-			diff = difflib.unified_diff(
-				from_code, 
-				to_code, 
-				fromfile=file_path, 
-				tofile=file_path, 
-				lineterm='',
-				n=0
-			)
-			
-			diffs.extend(diff)
-	
-		return "\n".join(diffs)
+		return True, "\n".join(diff)
 
 	def strip_assistant_content(self, assistant_content):
 		stripped_content = []
@@ -487,7 +444,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 					function_calls.append(FunctionCall("lldb", function_name, call_id, command))
 				elif function_name == "modify_code":
 					success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
-					
+					print(function_arguments)
 					if success:
 						function_calls.append(FunctionCall("patch", function_name, call_id, result))			
 					else:
