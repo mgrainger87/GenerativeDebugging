@@ -266,6 +266,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		stripped_content = []
 		
 		for entry in assistant_content[:-1]:
+			entry = entry.copy()
 			# print(f"Entry: {entry}")
 			if entry.get('role') == 'assistant' and 'content' in entry and len(entry) > 2:
 				entry.pop('content')
