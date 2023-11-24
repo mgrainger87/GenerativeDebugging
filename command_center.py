@@ -23,6 +23,9 @@ class CommandCenter:
 		# print(stop_info)
 		while True:
 			if debug_session.has_exited():
+				self.modelQuerier.append_user_message(f"The process exited with code {debug_session.exit_status_code()}.")
+				file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
+				file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after process exited with code {debug_session.exit_status_code()}.")
 				break
 
 			function_calls = self.modelQuerier.get_output(self.globalContext.workingDirectory)
@@ -37,6 +40,8 @@ class CommandCenter:
 					command_output = "The command produced no output."
 				print(f"***Command from model: {colored(function_call, 'red')}\n\tcontext: {printable_context}\n\tsuccess: {cmd.success}\n\tOutput: {colored(command_output, 'green')}")
 				self.modelQuerier.append_function_call_response(function_call, command_output)
+				
+			file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
 			
 			
 
@@ -74,12 +79,14 @@ class PatchCommand(Command):
 		self.success, command_output = file_utilities.apply_patch_from_string(self.globalContext.workingDirectory, self.context)
 		
 		if self.success:
+			
 			self.command_output = f"The patch was applied."
 			
 			compileCommand = CompileCommand({}, self.globalContext)
 			compileCommand.run()
 			self.success = compileCommand.success
 			if self.success:
+				file_utilities.add_commit(self.globalContext.workingDirectory, "Applying patch from model.")
 				restartCommand = RestartCommand({}, self.globalContext)
 				restartCommand.run()
 				self.success = restartCommand.success

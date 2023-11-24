@@ -33,8 +33,8 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 			else:
 				pass
 				
-		if len(files_to_check) > 100:
-			break
+		# if len(files_to_check) > 100:
+		# 	break
 				
 		# don't enumerate files in support directories
 		if 'testcasesupport' in dirs:
@@ -102,7 +102,6 @@ def write_test_case(testCase, base_path, copy_paths):
 	file_path = os.path.join(subdir_path, main_file_name)
 	
 	stripped_function_name = testCase.function_name.replace(testCase.name, 'func').replace('bad', 'foo')
-	print(stripped_function_name)
 	
 	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", testCase.header_lines.replace(testCase.function_name, stripped_function_name)).replace("<function_call>", stripped_function_name)
 	

@@ -23,7 +23,9 @@ def main():
 	gprint(f"***Using context identifier {modelQuerier.get_context_identifier()}")
 
 	code_directory = file_utilities.copy_to_temp(args.code_path)
-	gprint(f"Copied code to {code_directory}")
+	file_utilities.initialize_git_repository(code_directory)
+	gprint(f"Copied code to {code_directory}")	
+	
 	file_utilities.execute_command(code_directory, *args.compile_command)
 	gprint(f"Compiled with {args.compile_command}")
 	executable_path = os.path.join(code_directory, args.executable)

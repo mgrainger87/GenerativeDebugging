@@ -3,6 +3,7 @@ import tempfile
 import os
 import subprocess
 import pickle
+import json
 
 def copy_to_temp(source_dir):
 	# Create a temporary directory
@@ -87,8 +88,29 @@ def store_context(context, context_id):
 		os.makedirs(BASE_DIR)
 	with open(get_file_path(context_id), 'wb') as f:
 		pickle.dump(context, f)
+		
+def store_json_context(directory_path, context):
+	with open(os.path.join(directory_path, 'conversation.json'), 'w') as f:
+		f.write(json.dumps(context, indent=2))
 
 def retrieve_context(context_id):
 	"""Retrieve the context associated with the given context_id."""
 	with open(get_file_path(context_id), 'rb') as f:
 		return pickle.load(f)
+		
+def initialize_git_repository(directory_path):
+	os.chdir(directory_path)
+	
+	# Initialize the Git repository
+	subprocess.run(['git', 'init'])
+	
+	# Add all files to staging
+	subprocess.run(['git', 'add', '.'])
+	
+	# Make the initial commit
+	subprocess.run(['git', 'commit', '-m', 'Initial commit'])
+	
+def add_commit(directory_path, commit_message):
+	os.chdir(directory_path)
+	subprocess.run(['git', 'add', '.'])
+	subprocess.run(['git', 'commit', '-m', commit_message])
