@@ -33,8 +33,8 @@ def build_list_of_primary_c_cpp_testcase_files(directory, testcaseregexes):
 			else:
 				pass
 				
-		# if len(files_to_check) > 100:
-		# 	break
+		if len(files_to_check) > 100:
+			break
 				
 		# don't enumerate files in support directories
 		if 'testcasesupport' in dirs:
@@ -101,12 +101,15 @@ def write_test_case(testCase, base_path, copy_paths):
 	main_file_name = "main." + testCase.file_extension
 	file_path = os.path.join(subdir_path, main_file_name)
 	
-	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", testCase.header_lines).replace("<function_call>", testCase.function_name)
+	stripped_function_name = testCase.function_name.replace(testCase.name, 'func').replace('bad', 'foo')
+	print(stripped_function_name)
+	
+	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", testCase.header_lines.replace(testCase.function_name, stripped_function_name)).replace("<function_call>", stripped_function_name)
 	
 	with open(file_path, 'w') as file:
 		file.write(main_contents)
 	
-	test_case_output_path = os.path.join(subdir_path, os.path.basename(testCase.file_path))
+	test_case_output_path = os.path.join(subdir_path, os.path.basename(testCase.file_path).replace(testCase.name, 'func'))
 	
 	# Run unifdef
 	cmd = f"unifdef -DOMITGOOD -UOMITBAD -UINCLUDEMAIN -U_WIN32 {testCase.file_path}"
@@ -115,10 +118,9 @@ def write_test_case(testCase, base_path, copy_paths):
 		print(f"Error processing {file_path}: {result.stderr}")
 		return
 	
-	cleaned_code = comment_remover(result.stdout)
+	cleaned_code = comment_remover(result.stdout).replace(testCase.name, 'func').replace('bad', 'foo')
 	with open(test_case_output_path, 'w') as file:
 		file.write(cleaned_code)
-
 	
 	# Write other files
 	for path in copy_paths:
