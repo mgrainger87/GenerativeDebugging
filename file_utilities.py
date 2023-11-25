@@ -5,18 +5,20 @@ import subprocess
 import pickle
 import json
 
-def copy_to_temp(source_dir):
-	# Create a temporary directory
-	temp_dir = tempfile.mkdtemp()
-	
-	# Copy the entire content of the source directory to the temporary directory
+def copy_dir(source_dir, dest_dir):
+	# Copy the entire content of the source directory to the destination directory
 	for item in os.listdir(source_dir):
 		s = os.path.join(source_dir, item)
-		d = os.path.join(temp_dir, item)
+		d = os.path.join(dest_dir, item)
 		if os.path.isdir(s):
 			shutil.copytree(s, d)
 		else:
 			shutil.copy2(s, d)
+
+def copy_to_temp(source_dir):
+	# Create a temporary directory
+	temp_dir = tempfile.mkdtemp()
+	copy_dir(source_dir, temp_dir)
 			
 	return temp_dir
 
