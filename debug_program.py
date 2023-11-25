@@ -30,6 +30,10 @@ def debug_executable(code_path, compile_command, executable, model, context_iden
 	session = debugging.DebuggingSession(executable_path)
 	session.start(pause_at_start=False, working_directory=code_directory)
 	
+	if session.has_exited():
+		print(f"Process ran to completion. Skipping…")
+		return
+	
 	while True:
 		gprint(f"Process status: {session.process}")
 		if session.has_exited():
@@ -89,7 +93,6 @@ def main():
 				
 				gprint(f"Starting debugging process for {entry}…")
 				debug_executable(full_path, args.compile_command, args.executable, args.model, context_identifier, this_output_path)
-				print("returned from debug_executable")
 				# Assume that the context identifier is intended to be used only for the first program, since they aren't transferrable across programs being debugged.
 				context_identifier = None
 

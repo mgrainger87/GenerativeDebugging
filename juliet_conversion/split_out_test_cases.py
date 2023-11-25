@@ -51,7 +51,7 @@ class TestCase:
 		self.header_lines = header_lines
 		
 	def __str__(self):
-		return f"{self.file_path} {self.function_name} {self.file_extension}"
+		return f"{self.name} // {self.file_path} // {self.function_name}  // {self.file_extension} // {self.header_lines}"
 
 MAIN_FILE_TEMPLATE = """#include <time.h>
 #include <stdlib.h>
@@ -102,8 +102,11 @@ def write_test_case(testCase, base_path, copy_paths):
 	file_path = os.path.join(subdir_path, main_file_name)
 	
 	stripped_function_name = testCase.function_name.replace(testCase.name, 'func').replace('bad', 'foo')
-	
-	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", testCase.header_lines.replace(testCase.function_name, stripped_function_name)).replace("<function_call>", stripped_function_name)
+	print(testCase)
+	stripped_headers = testCase.header_lines.replace(testCase.name, 'func').replace('bad', 'foo')
+	print(stripped_headers)
+	print(testCase.function_name, stripped_function_name)
+	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", stripped_headers).replace("<function_call>", stripped_function_name)
 	
 	with open(file_path, 'w') as file:
 		file.write(main_contents)
@@ -132,7 +135,7 @@ def write_test_case(testCase, base_path, copy_paths):
 			all_source_files.append(file)
 
 	# Write Makefile
-	compiler = "clang++" if testCase.file_extension == ".cpp" else "clang"
+	compiler = "clang++" if testCase.file_extension == "cpp" else "clang"
 	makefile_contents = MAKEFILE_TEMPLATE.replace("<source files>", " ".join(all_source_files)).replace("<compiler>", compiler)
 
 	with open(os.path.join(subdir_path, "Makefile"), 'w') as file:

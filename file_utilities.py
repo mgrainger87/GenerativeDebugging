@@ -24,13 +24,13 @@ def copy_to_temp(source_dir):
 
 def store_success_sentinel(working_directory):
 	sentinel_path = os.path.join(working_directory, "succeeded.txt")
-	with file(sentinal_path, 'w') as f:
+	with open(sentinel_path, 'w') as f:
 		f.write("succeeded\n")
 
 def store_failure_sentinel(working_directory):
-		sentinel_path = os.path.join(working_directory, "failed.txt")
-		with file(sentinal_path, 'w') as f:
-			f.write("failed\n")
+	sentinel_path = os.path.join(working_directory, "failed.txt")
+	with open(sentinel_path, 'w') as f:
+		f.write("failed\n")
 
 def execute_command(directory_path, command, *args):
 	"""
