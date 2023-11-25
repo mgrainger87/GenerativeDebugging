@@ -71,14 +71,15 @@ def main():
 				
 				output_path = None
 				if args.output_path:
-					if not os.path.exists(args.output_path):
-						# Create the directory, including any intermediate directories
-						os.makedirs(args.output_path)
 					output_path = os.path.join(args.output_path, entry)
 					
 					if os.path.exists(output_path) and os.path.isdir(output_path) and os.listdir(output_path):
 						print(f"Skipping debugging for {entry} since its output directory already exists")
 						continue
+				
+					if not os.path.exists(output_path):
+						# Create the directory, including any intermediate directories
+						os.makedirs(output_path)
 				
 				gprint(f"Starting debugging process for {entry}…")
 				debug_executable(full_path, args.compile_command, args.executable, args.model, context_identifier, output_path)

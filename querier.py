@@ -65,7 +65,7 @@ class AIModelQuerier(ABC):
 		
 	@classmethod
 	def transient_prompt(cls):
-		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process. Be sure that the correct frame isselected using 'frame select' before issuing frame-specific commands like 'frame variable' or 'list'."
+		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process. When issuing debugger command, be sure that the correct frame is selected using 'frame select' before issuing frame-specific commands like 'frame variable'. Where possible, use the 'get_source' function instead of using the 'list' debugger command."
 		
 	def handle_debugger_output(cls, output):
 		return self.get_output(output)
@@ -137,6 +137,31 @@ class OpenAIModelQuerier(AIModelQuerier):
 							},
 						},
 						"required": ["cmd"],
+					},
+				}
+			},
+			{
+				"type": "function",
+				"function":  {
+					"name": "get_source",
+					"description": "Retrieve the contents of a particular source file, centered around a given line number.",
+					"parameters": {
+						"type": "object",
+						"properties": {
+							"file_path": {
+								"type": "string",
+								"description": "The path of the source file to read.",
+							},
+							"line_number": {
+								"type": "integer",
+								"description": "The line number of interest.",
+							},
+							"context_lines": {
+								"type": "integer",
+								"description": "The number of lines before and after the line of interest to display. Defaults to 10.",
+							},
+						},
+						"required": ["file_path", "line_number"],
 					},
 				}
 			},
@@ -440,9 +465,17 @@ class OpenAIModelQuerier(AIModelQuerier):
 				# print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
 				function_name = function_call["name"]
 				function_arguments = json.loads(function_call["arguments"])
+				print(function_call)
 				if function_name == "run_debugger_command":
 					command = function_arguments["cmd"]
 					function_calls.append(FunctionCall("lldb", function_name, call_id, command))
+				elif function_name == "get_source":
+					print(function_arguments)
+					file_path = function_arguments["file_path"]
+					line_number = function_arguments["line_number"]
+					context_lines = function_arguments.get("context_lines", 10)
+					context = f"{file_path}:{line_number}:{context_lines}"
+					function_calls.append(FunctionCall("source", function_name, call_id, context))
 				elif function_name == "modify_code":
 					success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
 					print(function_arguments)

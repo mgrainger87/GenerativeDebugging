@@ -59,6 +59,8 @@ class Command(ABC):
 			return PatchCommand(context, globalContext)
 		elif type == "lldb":
 			return DebuggerCommand(context, globalContext)
+		elif type == "source":
+			return SourceCommand(context, globalContext)
 		elif type == "compile":
 			return CompileCommand(context, globalContext)
 		elif type == "restart":
@@ -104,6 +106,46 @@ class DebuggerCommand(Command):
 			self.command_output = command_output
 		else:
 			self.command_output = f"Command execution failed: {command_output}"
+
+class SourceCommand(Command):
+	def run(self):
+		def prepend_line_numbers(text):
+			lines = text.splitlines()  # Split the text into lines
+			numbered_lines = [f"{i + 1}: {line}" for i, line in enumerate(lines)]  # Prepend line numbers
+			return "\n".join(numbered_lines)  # Join the lines back into a single string
+
+		def get_line_with_context(text, line_number, context):
+			# Split the text into lines
+			lines = text.split('\n')
+		
+			# Check if the line number is valid
+			if line_number < 1 or line_number > len(lines):
+				return "Line number out of range."
+		
+			# Adjust line number to 0-indexed
+			line_number -= 1
+		
+			# Calculate the start and end indices for context
+			start = max(0, line_number - context)
+			end = min(len(lines), line_number + context + 1)
+		
+			# Extract the lines and join them back into a string
+			return '\n'.join(lines[start:end])
+
+		split_context = self.context.split(":")
+		file_name = split_context[0]
+		line_number = int(split_context[1])
+		context_lines = int(split_context[2])
+		
+		self.command_output = file_utilities.get_source_code(self.globalContext.workingDirectory, file_name)
+		
+		if self.command_output:
+			self.command_output = prepend_line_numbers(self.command_output)
+			self.command_output = get_line_with_context(self.command_output, line_number, context_lines)
+
+		else:
+			self.success = False
+			self.command_output = f"Failed to get contents of source file {self.context}."
 
 class CompileCommand(Command):
 	def run(self):
