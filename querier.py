@@ -411,7 +411,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 		self.messages.append(new_message)
 
 	def get_output(self, base_path):
-		input_messages = self.strip_assistant_content(self.messages)		
+		input_messages = self.messages.copy() #self.strip_assistant_content(self.messages)		
 		# Transient system message
 		input_messages.append({"role": "system", "content": AIModelQuerier.transient_prompt()})
 				
