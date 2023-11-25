@@ -29,6 +29,7 @@ class AIModelQuerier(ABC):
 	
 	def __init__(self, model_identifier: str):
 		self._model_identifier = model_identifier
+		self.gave_up = False
 	
 	@property
 	def model_identifier(self) -> str:
@@ -65,7 +66,7 @@ class AIModelQuerier(ABC):
 		
 	@classmethod
 	def transient_prompt(cls):
-		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning about what command to issue and why it will help with the debugging of the process. When issuing debugger command, be sure that the correct frame is selected using 'frame select' before issuing frame-specific commands like 'frame variable'. Where possible, use the 'get_source' function instead of using the 'list' debugger command."
+		return "Analyze the output of any previous function calls and decide what to do next. Before issuing the next command you must explain your reasoning as succinctly as possible about what command(s) to issue and why doing so will help with the debugging of the process. Use multi_tool_use.parallel whenever issuing multiple commands would be helpful. When issuing debugger commands, be sure that the correct frame is selected using 'frame select' before issuing frame-specific commands like 'frame variable'. Where possible, use the 'get_source' function instead of using the 'list' debugger command."
 		
 	def handle_debugger_output(cls, output):
 		return self.get_output(output)
@@ -127,7 +128,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				"type": "function",
 				"function":  {
 					"name": "run_debugger_command",
-					"description": "Run a command using the lldb debugger.",
+					"description": "Run a command using the lldb debugger. Issue only a single command per function call.",
 					"parameters": {
 						"type": "object",
 						"properties": {
@@ -158,7 +159,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 							},
 							"context_lines": {
 								"type": "integer",
-								"description": "The number of lines before and after the line of interest to display. Defaults to 10.",
+								"description": "The number of lines before and after the line of interest to display. Defaults to 50.",
 							},
 						},
 						"required": ["file_path", "line_number"],
@@ -230,6 +231,19 @@ class OpenAIModelQuerier(AIModelQuerier):
 					}					
 				}
 			},
+			{
+				"type": "function",
+				"function":  {
+					"name": "give_up",
+					"description": "Run this function if and only if you conclude that you cannot fix the crash and there are no other reasonable debugging steps to take to investigate further..",
+					"parameters": {
+						"type": "object",
+						"properties": {},
+						"required": [],
+					},
+				}
+			},
+
 		]
 		
 	def validate_changes(self, source_code, change_dict):
@@ -473,7 +487,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 					print(function_arguments)
 					file_path = function_arguments["file_path"]
 					line_number = function_arguments["line_number"]
-					context_lines = function_arguments.get("context_lines", 10)
+					context_lines = function_arguments.get("context_lines", 50)
 					context = f"{file_path}:{line_number}:{context_lines}"
 					function_calls.append(FunctionCall("source", function_name, call_id, context))
 				elif function_name == "modify_code":
@@ -485,6 +499,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))
 				elif function_name == "restart":
 					function_calls.append(FunctionCall("restart", function_name, call_id, None))
+				elif function_name == "give_up":
+					function_calls.append(FunctionCall("give_up", function_name, call_id, None))
 				else:
 					function_calls.append(FunctionCall("none", function_name, call_id, None))			
 		

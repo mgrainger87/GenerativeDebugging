@@ -24,6 +24,7 @@ class CommandCenter:
 		while True:
 			if debug_session.has_exited():
 				self.modelQuerier.append_user_message(f"The process exited with code {debug_session.exit_status_code()}.")
+				file_utilities.store_success_sentinel(self.globalContext.workingDirectory)
 				file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
 				file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after process exited with code {debug_session.exit_status_code()}.")
 				break
@@ -65,6 +66,8 @@ class Command(ABC):
 			return CompileCommand(context, globalContext)
 		elif type == "restart":
 			return RestartCommand(context, globalContext)
+		elif type == "give_up":
+			return GiveUpCommand(context, globalContext)
 		elif type == "error":
 			return ErrorCommand(context, globalContext)
 		elif type == "none":
@@ -157,6 +160,17 @@ class CompileCommand(Command):
 class RestartCommand(Command):
 	def run(self):
 		self.success, self.command_output = self.globalContext.debugSession.restart()
+		
+class GiveUpCommand(Command):
+	def run(self):
+		self.modelQuerier.append_user_message(f"The model gave up.")
+		file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
+		file_utilities.store_failure_sentinel(self.globalContext.workingDirectory)
+		file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after the model gave up.")
+		self.modelQuerier.gave_up = True
+		self.success = True
+		self.command_output = "The model gave up."
+
 
 class ErrorCommand(Command):
 	def run(self):

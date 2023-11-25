@@ -35,6 +35,9 @@ def debug_executable(code_path, compile_command, executable, model, context_iden
 		if session.has_exited():
 			print(f"Process exited with return code {session.exit_status_code()}")
 			break
+		if modelQuerier.gave_up:
+			print(f"Model gave up.")
+			break
 		commandCenter.on_stop(session)
 		
 	# Copy git repository to the output directory
@@ -52,38 +55,41 @@ def main():
 	parser.add_argument('--output_path', required=False, help=f"The path to store completed git repositories at.")
 	args = parser.parse_args()
 	
+	output_path = os.path.abspath(args.output_path)
+	
 	if args.code_path:
-		debug_executable(args.code_path, args.compile_command, args.executable, args.model, args.context_identifier, args.output_path)
+		debug_executable(args.code_path, args.compile_command, args.executable, args.model, args.context_identifier, output_path)
 	elif args.code_directory_path:
-		if not os.path.exists(args.code_directory_path):
-			print(f"The directory '{args.code_directory_path}' does not exist.")
+		code_directory_path = os.path.abspath(args.code_directory_path)
+		if not os.path.exists(code_directory_path):
+			print(f"The directory '{code_directory_path}' does not exist.")
 			return
 			
 		context_identifier = args.context_identifier
 		# Iterate over the entries in the directory
-		for entry in os.listdir(args.code_directory_path):
+		for entry in os.listdir(code_directory_path):
 			# Construct the full path
-			full_path = os.path.join(args.code_directory_path, entry)
-			
+			full_path = os.path.join(code_directory_path, entry)
+			print(full_path)
 			# Check if the entry is a directory
 			if os.path.isdir(full_path):
 				print(full_path)
 				
-				output_path = None
-				if args.output_path:
-					output_path = os.path.join(args.output_path, entry)
+				this_output_path = None
+				if output_path:
+					this_output_path = os.path.join(output_path, entry)
 					
-					if os.path.exists(output_path) and os.path.isdir(output_path) and os.listdir(output_path):
+					if os.path.exists(this_output_path) and os.path.isdir(this_output_path) and os.listdir(this_output_path):
 						print(f"Skipping debugging for {entry} since its output directory already exists")
 						continue
 				
-					if not os.path.exists(output_path):
+					if not os.path.exists(this_output_path):
 						# Create the directory, including any intermediate directories
-						os.makedirs(output_path)
+						os.makedirs(this_output_path)
 				
 				gprint(f"Starting debugging process for {entry}…")
-				debug_executable(full_path, args.compile_command, args.executable, args.model, context_identifier, output_path)
-				
+				debug_executable(full_path, args.compile_command, args.executable, args.model, context_identifier, this_output_path)
+				print("returned from debug_executable")
 				# Assume that the context identifier is intended to be used only for the first program, since they aren't transferrable across programs being debugged.
 				context_identifier = None
 
