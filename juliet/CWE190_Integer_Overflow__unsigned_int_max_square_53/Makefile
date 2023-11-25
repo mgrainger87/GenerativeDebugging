@@ -1,7 +1,7 @@
 # Variables
 CC = clang
 CFLAGS = -g
-SOURCES = std_thread.c io.c funcb.c main.c
+SOURCES = funca.c std_thread.c io.c funcb.c funcc.c main.c funcd.c
 TARGET = main
 
 # Targets and Rules

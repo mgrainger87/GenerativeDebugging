@@ -1,7 +1,7 @@
 #include <time.h>
 #include <stdlib.h>
 
-	namespace CWE127_Buffer_Underread__new_char_memcpy_01 { void bad();}
+	namespace func { void foo();}
 
 
 int main(int argc, char * argv[]) {

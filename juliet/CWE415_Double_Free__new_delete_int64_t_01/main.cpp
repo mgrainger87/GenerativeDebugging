@@ -1,7 +1,7 @@
 #include <time.h>
 #include <stdlib.h>
 
-	namespace CWE415_Double_Free__new_delete_int64_t_01 { void bad();}
+	namespace func { void foo();}
 
 
 int main(int argc, char * argv[]) {

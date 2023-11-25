@@ -102,10 +102,7 @@ def write_test_case(testCase, base_path, copy_paths):
 	file_path = os.path.join(subdir_path, main_file_name)
 	
 	stripped_function_name = testCase.function_name.replace(testCase.name, 'func').replace('bad', 'foo')
-	print(testCase)
 	stripped_headers = testCase.header_lines.replace(testCase.name, 'func').replace('bad', 'foo')
-	print(stripped_headers)
-	print(testCase.function_name, stripped_function_name)
 	main_contents = MAIN_FILE_TEMPLATE.replace("<prototype>", stripped_headers).replace("<function_call>", stripped_function_name)
 	
 	with open(file_path, 'w') as file:
@@ -201,7 +198,26 @@ def update_main_cpp_and_testcases_h(testcaseregexes):
 		write_test_case(testCase, "/tmp/juliet", copy_files)
 	
 	return
+
+def replace_subdirectories(source_dir, destination_dir):
+	# Iterate through each subdirectory in the destination directory
+	for item in os.listdir(destination_dir):
+		dest_subdir = os.path.join(destination_dir, item)
+
+		# Check if it's a directory and if the same directory exists in the source
+		if os.path.isdir(dest_subdir) and os.path.exists(os.path.join(source_dir, item)):
+			source_subdir = os.path.join(source_dir, item)
+
+			# Remove the subdirectory from the destination
+			shutil.rmtree(dest_subdir)
+
+			# Copy the subdirectory from the source to the destination
+			shutil.copytree(source_subdir, dest_subdir)
+			print(f"Replaced subdirectory: {item}")
 	
+	# Example usage
+	# replace_subdirectories('/path/to/source_dir', '/path/to/destination_dir')
+
 if __name__ == "__main__":
 
 	testcaseregexes=None
@@ -213,3 +229,4 @@ if __name__ == "__main__":
 		testcaseregexes=sys.argv[1:]
 
 	update_main_cpp_and_testcases_h(testcaseregexes)
+	replace_subdirectories("/tmp/juliet", "/Users/morgang/code/GenerativeDebugging/juliet")

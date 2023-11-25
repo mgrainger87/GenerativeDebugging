@@ -1,5 +1,5 @@
 # Variables
-CC = clang
+CC = clang++
 CFLAGS = -g
 SOURCES = func.cpp std_thread.c io.c main.cpp
 TARGET = main
