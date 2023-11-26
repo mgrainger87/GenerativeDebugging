@@ -5,14 +5,15 @@ import textwrap
 from termcolor import colored
 
 class GlobalContext:
-	def __init__(self, workingDirectory, compileCommand):
+	def __init__(self, workingDirectory, compileCommand, modelQuerier):
 		self.workingDirectory = workingDirectory
 		self.compileCommand = compileCommand	
+		self.modelQuerier = modelQuerier
 
 class CommandCenter:
 	def __init__(self, modelQuerier, workingDirectory, compileCommand):
 		self.modelQuerier = modelQuerier
-		self.globalContext = GlobalContext(workingDirectory, compileCommand)
+		self.globalContext = GlobalContext(workingDirectory, compileCommand, modelQuerier)
 	
 	def on_stop(self, debug_session):
 		command_output = debug_session.stop_info()
@@ -97,7 +98,8 @@ class PatchCommand(Command):
 				self.success = restartCommand.success
 				self.command_output = f"{self.command_output}\n{restartCommand.command_output}"
 			else:
-				self.command_output = f"{self.command_output}\n{compileCommand.command_output}"
+				file_utilities.reset_to_last_commit(self.globalContext.workingDirectory)
+				self.command_output = f"{self.command_output}\nCompilation failed: {compileCommand.command_output}. The patch was rolled back."
 			
 		else:
 			self.command_output = f"Applying the patch failed.\nPatch:\n{self.context}\n\nError: {command_output}"
@@ -163,11 +165,11 @@ class RestartCommand(Command):
 		
 class GiveUpCommand(Command):
 	def run(self):
-		self.modelQuerier.append_user_message(f"The model gave up.")
-		file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
+		self.globalContext.modelQuerier.append_user_message(f"The model gave up.")
+		file_utilities.store_json_context(self.globalContext.workingDirectory, self.globalContext.modelQuerier.messages)
 		file_utilities.store_failure_sentinel(self.globalContext.workingDirectory)
 		file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after the model gave up.")
-		self.modelQuerier.gave_up = True
+		self.globalContext.modelQuerier.gave_up = True
 		self.success = True
 		self.command_output = "The model gave up."
 

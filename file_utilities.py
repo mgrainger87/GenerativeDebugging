@@ -47,6 +47,11 @@ def execute_command(directory_path, command, *args):
 	
 	return result.returncode, result.stdout, result.stderr
 	
+def reset_to_last_commit(working_directory):
+	os.chdir(working_directory)
+	subprocess.run(['git', 'reset', '--hard', 'HEAD'])
+	
+
 def apply_patch_from_string(working_directory, patch_string):
 	try:
 		# Dry run to check if the patch can be applied

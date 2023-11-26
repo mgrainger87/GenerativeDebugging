@@ -234,8 +234,8 @@ class OpenAIModelQuerier(AIModelQuerier):
 			{
 				"type": "function",
 				"function":  {
-					"name": "give_up",
-					"description": "Run this function if and only if you conclude that you cannot fix the crash and there are no other reasonable debugging steps to take to investigate further..",
+					"name": "end_session",
+					"description": "Run this function to end the debugging session only if you cannot continue debugging and there are no other reasonable debugging steps to take to investigate further.",
 					"parameters": {
 						"type": "object",
 						"properties": {},
@@ -249,8 +249,24 @@ class OpenAIModelQuerier(AIModelQuerier):
 	def validate_changes(self, source_code, change_dict):
 		lines = source_code.splitlines()
 		for change in change_dict["changes"]:
-			start_line = change["from-file-range"]["start-line"] - 1
-			num_lines = len(change["from-file-range"]["code"].splitlines())
+			if not "from-file-range" in change:
+				return False, "from-file-range is missing"
+			from_range = change["from-file-range"]
+			if not "start-line" in from_range:
+				return False, "start-line is missing in from-file-range"
+			if not "code" in from_range:
+				return False, "code is missing in from-file-range"
+			
+			if not "to-file-range" in change:
+				return False, "to-file-range missing"
+			to_range = change["to-file-range"]
+			if not "start-line" in to_range:
+				return False, "start-line is missing in from-file-range"
+			if not "code" in to_range:
+				return False, "code is missing in to-file-range"
+
+			start_line = from_range["start-line"] - 1
+			num_lines = len(from_range["code"].splitlines())
 			extracted_lines = [line.lstrip().rstrip() for line in lines[start_line:start_line + num_lines]]
 			
 			expected_lines = [line.lstrip().rstrip() for line in change["from-file-range"]["code"].splitlines()]
@@ -486,7 +502,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 				elif function_name == "get_source":
 					print(function_arguments)
 					file_path = function_arguments["file_path"]
-					line_number = function_arguments["line_number"]
+					line_number = function_arguments.get("line_number", 25)
 					context_lines = function_arguments.get("context_lines", 50)
 					context = f"{file_path}:{line_number}:{context_lines}"
 					function_calls.append(FunctionCall("source", function_name, call_id, context))
@@ -499,7 +515,7 @@ class OpenAIModelQuerier(AIModelQuerier):
 						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))
 				elif function_name == "restart":
 					function_calls.append(FunctionCall("restart", function_name, call_id, None))
-				elif function_name == "give_up":
+				elif function_name == "end_session":
 					function_calls.append(FunctionCall("give_up", function_name, call_id, None))
 				else:
 					function_calls.append(FunctionCall("none", function_name, call_id, None))			
