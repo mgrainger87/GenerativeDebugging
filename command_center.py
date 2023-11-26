@@ -29,6 +29,8 @@ class CommandCenter:
 				file_utilities.store_json_context(self.globalContext.workingDirectory, self.modelQuerier.messages)
 				file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after process exited with code {debug_session.exit_status_code()}.")
 				break
+			if self.modelQuerier.gave_up:
+				break
 
 			function_calls = self.modelQuerier.get_output(self.globalContext.workingDirectory)
 
@@ -99,7 +101,7 @@ class PatchCommand(Command):
 				self.command_output = f"{self.command_output}\n{restartCommand.command_output}"
 			else:
 				file_utilities.reset_to_last_commit(self.globalContext.workingDirectory)
-				self.command_output = f"{self.command_output}\nCompilation failed: {compileCommand.command_output}. The patch was rolled back."
+				self.command_output = f"{self.command_output}\nCompilation failed: {compileCommand.command_output}. The patch was rolled back. For debugging purposes, the patch applied appears below:\n{self.context}"
 			
 		else:
 			self.command_output = f"Applying the patch failed.\nPatch:\n{self.context}\n\nError: {command_output}"
