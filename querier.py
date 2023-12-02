@@ -440,86 +440,100 @@ class OpenAIModelQuerier(AIModelQuerier):
 		new_message = {"role": "user", "content": message}
 		self.messages.append(new_message)
 
-	def get_output(self, base_path):
+	def get_output(self, base_path, stream=False):
 		input_messages = self.messages.copy() #self.strip_assistant_content(self.messages)		
 		# Transient system message
 		input_messages.append({"role": "system", "content": AIModelQuerier.transient_prompt()})
-				
-		response_message = self.get_next_response_from_context()
-		if response_message is not None:
-			print(f"***Using response from context: {response_message.get('content')}")
-		else:
-			response = openai.ChatCompletion.create(
-				model=self.model_identifier,
-				max_tokens=1000,
-				messages=input_messages,
-				tools=self.get_tools(),
-				# function_call={"name": "run_debugger_command"},
-				stream=True
-			)
-
-			# create variables to collect the stream of chunks
-			collected_chunks = []
-			
-			printed_response_header = False
-			# iterate through the stream of events
-			for chunk in response:
-				collected_chunks.append(chunk.choices[0])  # save the event response
-				chunk_message = chunk['choices'][0]  # extract the message
-				
-				if chunk_message.delta.get("content"):
-					if not printed_response_header:
-						print("***Streamed response from model: ", end = "")
-						printed_response_header = True
-					print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
-
-			if printed_response_header:
-				print("")
-			# print(f"collected chunks: {collected_chunks}")
-			# print the time delay and text received
-			response_message = self.merge_chunks(collected_chunks)			
 		
-		# Extract the generated code
-		self.messages.append(response_message)
-		self.save_context(self._output_context_identifier)
-		interimUUID = uuid.uuid4()
-		self.save_context(interimUUID)
-		print(colored(f"Saved interim state as {interimUUID}", 'light_grey'))
-		# print(response_message)
-
 		function_calls = []
-		if response_message.get("tool_calls"):
-			for tool_call in response_message["tool_calls"]:
-				function_call = tool_call["function"]
-				call_id = tool_call["id"]
-				# print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
-				function_name = function_call["name"]
-				function_arguments = json.loads(function_call["arguments"])
-				print(function_call)
-				if function_name == "run_debugger_command":
-					command = function_arguments["cmd"]
-					function_calls.append(FunctionCall("lldb", function_name, call_id, command))
-				elif function_name == "get_source":
-					print(function_arguments)
-					file_path = function_arguments["file_path"]
-					line_number = function_arguments.get("line_number", 25)
-					context_lines = function_arguments.get("context_lines", 50)
-					context = f"{file_path}:{line_number}:{context_lines}"
-					function_calls.append(FunctionCall("source", function_name, call_id, context))
-				elif function_name == "modify_code":
-					success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
-					print(function_arguments)
-					if success:
-						function_calls.append(FunctionCall("patch", function_name, call_id, result))			
-					else:
-						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))
-				elif function_name == "restart":
-					function_calls.append(FunctionCall("restart", function_name, call_id, None))
-				elif function_name == "end_session":
-					function_calls.append(FunctionCall("give_up", function_name, call_id, None))
-				else:
-					function_calls.append(FunctionCall("none", function_name, call_id, None))			
+
+		try:
+			response_message = self.get_next_response_from_context()
+			if response_message is not None:
+				print(f"***Using response from context: {response_message.get('content')}")
+			else:
+				response = openai.ChatCompletion.create(
+					model=self.model_identifier,
+					max_tokens=1000,
+					messages=input_messages,
+					tools=self.get_tools(),
+					# function_call={"name": "run_debugger_command"},
+					stream=stream
+				)
+	
+				if stream:
+					# create variables to collect the stream of chunks
+					collected_chunks = []
+					
+					printed_response_header = False
+					# iterate through the stream of events
+					for chunk in response:
+						collected_chunks.append(chunk.choices[0])  # save the event response
+						chunk_message = chunk['choices'][0]  # extract the message
+						
+						if chunk_message.delta.get("content"):
+							if not printed_response_header:
+								print("***Streamed response from model: ", end = "")
+								printed_response_header = True
+							print(colored(chunk_message.delta.content, 'red'), end = "", flush=True)
 		
+					if printed_response_header:
+						print("")
+					# print(f"collected chunks: {collected_chunks}")
+					# print the time delay and text received
+					response_message = self.merge_chunks(collected_chunks)
+				else:
+					response_message = response.choices[0].message
+					print("***Response from model: ", end = "")
+					print(colored(response_message.content, 'red'))
+			
+			# Extract the generated code
+			self.messages.append(response_message)
+			self.save_context(self._output_context_identifier)
+			interimUUID = uuid.uuid4()
+			self.save_context(interimUUID)
+			print(colored(f"Saved interim state as {interimUUID}", 'light_grey'))
+			# print(response_message)
+	
+			if response_message.get("tool_calls"):
+				for tool_call in response_message["tool_calls"]:
+					function_call = tool_call["function"]
+					call_id = tool_call["id"]
+					print(f"***Function call: {function_call['name']}\n{function_call['arguments']}")
+					function_name = function_call["name"]
+					try:
+						function_arguments = json.loads(function_call["arguments"])
+					except json.decoder.JSONDecodeError as e:
+						function_calls.append(FunctionCall("error", function_name, call_id,  f"Error parsing function call arguments json: {str(e)}. Please retry with correct json."))
+						continue
+						
+					print(function_call)
+					if function_name == "run_debugger_command":
+						command = function_arguments["cmd"]
+						function_calls.append(FunctionCall("lldb", function_name, call_id, command))
+					elif function_name == "get_source":
+						print(function_arguments)
+						file_path = function_arguments["file_path"]
+						line_number = function_arguments.get("line_number", 25)
+						context_lines = function_arguments.get("context_lines", 50)
+						context = f"{file_path}:{line_number}:{context_lines}"
+						function_calls.append(FunctionCall("source", function_name, call_id, context))
+					elif function_name == "modify_code":
+						success, result = self.validate_changes_and_generate_unified_diff(function_arguments, base_path)
+						print(function_arguments)
+						if success:
+							function_calls.append(FunctionCall("patch", function_name, call_id, result))			
+						else:
+							function_calls.append(FunctionCall("error", function_name, call_id,  f"Error generating diff for this change: {result}"))
+					elif function_name == "restart":
+						function_calls.append(FunctionCall("restart", function_name, call_id, None))
+					elif function_name == "end_session":
+						function_calls.append(FunctionCall("give_up", function_name, call_id, None))
+					else:
+						function_calls.append(FunctionCall("none", function_name, call_id, None))			
+		except openai.error.InvalidRequestError as e:
+			function_calls.append(FunctionCall("fatal_error", "fatal_error", None, str(e)))
+			
 		return function_calls
 # 
 # 		print(f"***Response:\n{response}")

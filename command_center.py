@@ -73,6 +73,8 @@ class Command(ABC):
 			return GiveUpCommand(context, globalContext)
 		elif type == "error":
 			return ErrorCommand(context, globalContext)
+		elif type == "fatal_error":
+			return FatalErrorCommand(context, globalContext)
 		elif type == "none":
 			return NoCommand(context, globalContext)
 		else:
@@ -180,6 +182,17 @@ class ErrorCommand(Command):
 	def run(self):
 		self.success = False
 		self.command_output = self.context
+		
+class FatalErrorCommand(Command):
+	def run(self):
+		self.globalContext.modelQuerier.append_user_message(f"Ending session due to a fatal error: {self.context}")
+		file_utilities.store_json_context(self.globalContext.workingDirectory, self.globalContext.modelQuerier.messages)
+		file_utilities.store_failure_sentinel(self.globalContext.workingDirectory)
+		file_utilities.add_commit(self.globalContext.workingDirectory, f"Final commit after ending due to a fatal error: {self.context}.")
+		self.globalContext.modelQuerier.gave_up = True
+		self.success = True
+		self.command_output = "The model encountered a fatal error."
+
 
 class NoCommand(Command):
 	def run(self):

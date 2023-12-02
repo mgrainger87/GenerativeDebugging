@@ -190,6 +190,68 @@ def summarize_conversations_by_segment(df):
 	aggregated_df['count'] = df.groupby('directory_segment').size()
 	
 	return aggregated_df
+	
+def generate_latex_code_from_df(df):
+	template = """
+\\documentclass{{article}}
+\\usepackage{{pgfplots}}
+\\pgfplotsset{{compat=1.17}}
+
+\\begin{{document}}
+
+\\begin{{tikzpicture}}
+\\begin{{axis}}[
+	ybar stacked,
+	bar width=15pt,
+	width=8cm,
+	height=7cm,
+	enlargelimits=0.15,
+	legend style={{
+		at={{(0.5,-0.15)}},
+		anchor=north,
+		legend columns=2,
+		column sep=0.5cm,
+		legend cell align=left,
+	}},
+	ylabel={{Commands per Debugging Session}},
+	ylabel near ticks,
+	ymin=0,
+	symbolic x coords={{{}}},
+	xtick=data,
+	xticklabel style={{rotate=0, anchor=north, align=center, text width=1.5cm,xshift=0pt}},
+	]
+{}
+\\legend{{Run Debugger Command, Get Source, Modify Code, Restart, End Session}}
+{}
+\\end{{axis}}
+\\end{{tikzpicture}}
+
+\\end{{document}}
+"""
+
+	df_normalized = df[['run_debugger_command', 'get_source', 'modify_code', 'restart', 'end_session']].div(df['count'], axis=0)
+
+	# Extract problem categories
+	categories = ', '.join(df_normalized.index)
+	
+	# Prepare the data for each stack
+	stacks = ["run_debugger_command", "get_source", "modify_code", "restart", "end_session"]
+	stack_data = ""
+	colors = ["blue!50", "red!50", "green!50", "orange!50", "gray!50"]
+	
+	for stack, color in zip(stacks, colors):
+		stack_data += "\\addplot+[ybar, fill={}] plot coordinates {{".format(color)
+		for category in df_normalized.index:
+			stack_data += "({}, {}) ".format(category, df_normalized.at[category, stack])
+		stack_data += "};\n"
+		
+	# Generate nodes for sums
+	node_data = "\n"
+	for category in df_normalized.index:
+		sum_normalized = df_normalized.loc[category].sum()
+		node_data += f"\\node at (axis cs:{category},{sum_normalized:.2f}) [above] {{{sum_normalized:.2f}}};\n"
+	
+	return template.format(categories, stack_data, node_data)
 
 # Define the path to the directory containing the test data
 directory_path = sys.argv[1]
@@ -209,3 +271,6 @@ print(summarize_conversations_by_segment(updated_df))
 print("\nAll debugger commands:")
 print(count_all_debugger_commands(directory_path))
 
+print("\nLaTeX code:")
+latex_code = generate_latex_code_from_df(summarize_conversations_by_segment(updated_df))
+print(latex_code)
