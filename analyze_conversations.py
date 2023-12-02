@@ -216,6 +216,7 @@ def generate_latex_code_from_df(df):
 	ylabel={{Commands per Debugging Session}},
 	ylabel near ticks,
 	ymin=0,
+	ymax=30,
 	symbolic x coords={{{}}},
 	xtick=data,
 	xticklabel style={{rotate=0, anchor=north, align=center, text width=1.5cm,xshift=0pt}},
