@@ -24,32 +24,27 @@ def count_roles_and_functions(json_data):
 
 	return count
 
+# Function to create a DataFrame from a directory path
 def create_dataframe(directory_path):
-	"""
-	Recreate the DataFrame from the conversation.json files and add a column for the first part 
-	of the last directory path segment.
-	"""
 	summary_data = []
-
-	# Walk through the directory and its subdirectories
 	for root, dirs, files in os.walk(directory_path):
 		for file in files:
 			if file == "conversation.json":
 				file_path = os.path.join(root, file)
-
 				with open(file_path, 'r') as json_file:
 					data = json.load(json_file)
 					counts = count_roles_and_functions(data)
-					# Extract the first part of the last directory path segment
 					directory_segment = root.split('/')[-1].split('_')[0]
-					summary_data.append({"directory": root, "directory_segment": directory_segment, **counts})
+					# Check for success.txt file in the same directory
+					success = 'succeeded.txt' in files
+					summary_data.append({"directory": root, 
+										 "directory_segment": directory_segment, 
+										 "success": success, 
+										 **counts})
 
 	df = pd.DataFrame(summary_data)
-
-	# Expand the function counts into separate columns and convert to integers
 	functions_df = df['functions'].apply(pd.Series).fillna(0).astype(int)
 	expanded_df = pd.concat([df.drop(columns=['functions']), functions_df], axis=1)
-
 	return expanded_df
 
 def expand_function_counts(df):
@@ -98,6 +93,10 @@ def count_debugger_commands_extended(json_data):
 					if words:
 						command_name = words[0]
 						command_counts[command_name] = command_counts.get(command_name, 0) + 1
+
+					commands_without_subcommands = ["p", "print", "expr", "expression", "x/s", "disassemble"]
+					if command_name in commands_without_subcommands:
+						continue
 
 					# Subcommand name (first two words)
 					if len(words) > 1:
@@ -193,12 +192,6 @@ def summarize_conversations_by_segment(df):
 	
 def generate_latex_code_from_df(df):
 	template = """
-\\documentclass{{article}}
-\\usepackage{{pgfplots}}
-\\pgfplotsset{{compat=1.17}}
-
-\\begin{{document}}
-
 \\begin{{tikzpicture}}
 \\begin{{axis}}[
 	ybar stacked,
@@ -225,34 +218,112 @@ def generate_latex_code_from_df(df):
 \\legend{{Run Debugger Command, Get Source, Modify Code, Restart, End Session}}
 {}
 \\end{{axis}}
-\\end{{tikzpicture}}
 
-\\end{{document}}
+% Secondary y-axis (line graph)
+\\begin{{axis}}[
+	width=8cm,
+	height=7cm,
+	enlargelimits=0.15,
+	axis y line*=right,
+	axis x line=none,
+	symbolic x coords={{{}}},
+	xtick=data,
+	ylabel={{Success Rate (\%)}},
+	ylabel near ticks,
+	ymin=0,
+	ymax=100,
+	ytick={{0,20,...,100}},
+	yticklabel=$\\pgfmathprintnumber{{\\tick}}$,
+	nodes near coords={{
+		\\pgfmathprintnumber[precision=0, fixed zerofill]{{\\pgfplotspointmeta}}
+	}},
+	every node near coord/.append style={{font=\\tiny}}
+	]
+\\addplot[sharp plot, mark=*] coordinates {{{}}};
+\\end{{axis}}
+
+\\end{{tikzpicture}}
 """
 
 	df_normalized = df[['run_debugger_command', 'get_source', 'modify_code', 'restart', 'end_session']].div(df['count'], axis=0)
 
 	# Extract problem categories
 	categories = ', '.join(df_normalized.index)
-	
+
 	# Prepare the data for each stack
 	stacks = ["run_debugger_command", "get_source", "modify_code", "restart", "end_session"]
 	stack_data = ""
 	colors = ["blue!50", "red!50", "green!50", "orange!50", "gray!50"]
-	
+
 	for stack, color in zip(stacks, colors):
 		stack_data += "\\addplot+[ybar, fill={}] plot coordinates {{".format(color)
 		for category in df_normalized.index:
 			stack_data += "({}, {}) ".format(category, df_normalized.at[category, stack])
 		stack_data += "};\n"
-		
+
 	# Generate nodes for sums
 	node_data = "\n"
 	for category in df_normalized.index:
 		sum_normalized = df_normalized.loc[category].sum()
 		node_data += f"\\node at (axis cs:{category},{sum_normalized:.2f}) [above] {{{sum_normalized:.2f}}};\n"
+
+	# Calculate success percentages
+	success_percentages = calculate_success_percentage(df)
+
+	# Prepare the data for the line graph
+	line_graph_data = ""
+	for category, percentage in success_percentages.items():
+		line_graph_data += f"({category}, {percentage:.2f}) "
+
+	return template.format(categories, stack_data, node_data, categories, line_graph_data)
+
+# Generalized function with an exceptions list parameter to combine certain types of error messages
 	
-	return template.format(categories, stack_data, node_data)
+def count_errors_with_exceptions(directory, exceptions):
+	error_count = {}
+	prefix = "Command execution failed: error: "
+	for root, dirs, files in os.walk(directory):
+		if 'conversation.json' in files:
+			with open(os.path.join(root, 'conversation.json'), 'r') as file:
+				conversations = json.load(file)
+				for conversation in conversations:
+					content = conversation.get('content', '')
+					if content:
+						# Extract error string up to the first newline, strip the prefix and trailing period
+						error_msg = content.split("\n")[0]
+						if error_msg.startswith(prefix):
+							stripped_error_msg = error_msg[len(prefix):].rstrip(".")
+
+							# Check for exceptions and combine errors accordingly
+							combined = False
+							for exception, combined_key in exceptions.items():
+								if exception in stripped_error_msg:
+									combined_key_stripped = combined_key[len(prefix):].rstrip(".")
+									error_count[combined_key_stripped] = error_count.get(combined_key_stripped, 0) + 1
+									combined = True
+									break
+							
+							# If not combined, count as a unique error
+							if not combined:
+								error_count[stripped_error_msg] = error_count.get(stripped_error_msg, 0) + 1
+
+	# Sort the dictionary by count in descending order
+	sorted_error_count = dict(sorted(error_count.items(), key=lambda item: item[1], reverse=True))
+	return sorted_error_count
+
+def calculate_success_percentage(df):
+	# Initialize an empty dictionary to store the results
+	success_percentages = {}
+	
+	# Iterate through each row in the DataFrame
+	for index, row in df.iterrows():
+		# Calculate success percentage
+		success_percentage = (row['success'] / row['count']) * 100
+	
+		# Map the directory_segment to its success percentage
+		success_percentages[index] = success_percentage
+	
+	return success_percentages
 
 # Define the path to the directory containing the test data
 directory_path = sys.argv[1]
@@ -267,11 +338,39 @@ print("\nNumber of conversation entries:")
 print(updated_df.sum(numeric_only=True).to_dict())
 
 print("\nBy segment:")
-print(summarize_conversations_by_segment(updated_df))
+segment_df = summarize_conversations_by_segment(updated_df)
+print(segment_df)
 
 print("\nAll debugger commands:")
 print(count_all_debugger_commands(directory_path))
 
 print("\nLaTeX code:")
-latex_code = generate_latex_code_from_df(summarize_conversations_by_segment(updated_df))
+latex_code = generate_latex_code_from_df(segment_df)
 print(latex_code)
+
+print("\nSuccess percentages:")
+print(calculate_success_percentage(segment_df))
+
+# Define exceptions to combine specific types of error messages
+exceptions = {
+	"no variable named": "Command execution failed: error: no variable named",
+	"memory read failed": "Command execution failed: error: memory read failed",
+	"no modules found": "Command execution failed: error: no modules found",
+	"unexpected char": "Command execution failed: error: unexpected char encountered",
+	"invalid frame index argument": "Command execution failed: error: invalid frame index argument",
+	"unexpected char": "Command execution failed: error: unexpected char encountered",
+	"is not a valid command": "Command execution failed: not a valid command",
+	"'memory read' will not read over 1024 bytes of data": "Command execution failed: error: 'memory read' will not read over 1024 bytes of data",
+	"Couldn't apply expression side effects": "Command execution failed: error: Couldn't apply expression side effects",
+	"Frame index (": "Command execution failed: error: Frame index out of range",
+	"doesn't take any arguments": "Command execution failed: error: command doesn't take any arguments",
+	"Invalid format character or name": "Command execution failed: error: Invalid format character or name",
+	"address expression \"": "Command execution failed: error: address expression evaluation failed",
+	"too many arguments": "Command execution failed: error: too many arguments",
+
+}
+
+# Count errors in the extracted folder with the generalized function and exceptions
+print("\nError types and counts:")
+generalized_error_counts = count_errors_with_exceptions(sys.argv[1], exceptions)
+print(generalized_error_counts)

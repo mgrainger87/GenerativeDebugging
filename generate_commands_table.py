@@ -101,6 +101,10 @@ def create_latex_table_ordered_by_sum(main_cmds_list, sub_cmds_list):
 	:param sub_cmds_list: List of dictionaries of sub-commands and their counts.
 	:return: String representing the LaTeX table.
 	"""
+	
+	# Calculate total sum of all main commands for each column
+	total_sums = [sum(main_cmds.get(cmd, 0) for cmd in main_cmds) for main_cmds in main_cmds_list]
+	
 	# Combine and sum counts for all main and sub commands
 	combined_main_cmds = {cmd: sum(d.get(cmd, 0) for d in main_cmds_list) for cmd in set().union(*main_cmds_list)}
 	combined_sub_cmds = {cmd: sum(d.get(cmd, 0) for d in sub_cmds_list) for cmd in set().union(*sub_cmds_list)}
@@ -118,7 +122,7 @@ def create_latex_table_ordered_by_sum(main_cmds_list, sub_cmds_list):
 	# Add headers for count columns
 	for i in range(len(main_cmds_list)):
 		latex_table += f"& Count {i + 1} "
-	latex_table += "\\\\\n \\textit{(sub-instructions seen)} \\\\\n\\midrule\n"
+	latex_table += "\\\\\n \\textit{(sub-commands seen)} \\\\\n\\midrule\n"
 
 	# Process each main command
 	for cmd, _ in sorted_main_cmds:
@@ -128,7 +132,7 @@ def create_latex_table_ordered_by_sum(main_cmds_list, sub_cmds_list):
 		# Add counts for each main command from each dictionary
 		for main_cmds in main_cmds_list:
 			count = main_cmds.get(cmd, 0)
-			count_text = f"\\textbf{{{count}}}" if count != 0 else ""
+			count_text = f"\\textbf{{{count}}}" if count != 0 else "--"
 			latex_table += f" & {count_text}"
 
 		latex_table += " \\\\\n"
@@ -144,40 +148,40 @@ def create_latex_table_ordered_by_sum(main_cmds_list, sub_cmds_list):
 			# Add counts for each sub-command from each dictionary
 			for sub_cmds in sub_cmds_list:
 				sub_count = sub_cmds.get(sub_cmd, 0)
-				sub_count_text = f"\\textit{{{sub_count}}}" if sub_count != 0 else ""
+				sub_count_text = f"\\textit{{{sub_count}}}" if sub_count != 0 else "--"
 				latex_table += f" & {sub_count_text}"
 			
 			latex_table += " \\\\\n"
+
+	# Add total sum row for main commands
+	latex_table += "\\midrule\n\\textbf{Total} "
+	for total in total_sums:
+		latex_table += f"& \\textbf{{{total}}} "
+	latex_table += "\\\\\n"
 
 	latex_table += "\\bottomrule\n\\end{tabular}\n\\end{table}"
 
 	return latex_table
 
+# Updated data
 main_commands_list = [
-	{'frame': 200, 'memory': 3, 'breakpoint': 4, 'process': 3, 'bt': 2, 'continue': 1},
 	{'frame': 839, 'expr': 25, 'break': 2, 'run': 3, 'breakpoint': 2, 'thread': 23, 'log': 3, 'print': 10, 
 	 'continue': 18, 'bt': 36, 'register': 6, 'memory': 87, 'r': 1, 'p': 13, 'up': 1, 'list': 1, 
 	 'disassemble': 5, 'process': 15, 'expression': 4, 'settings': 2, 
 	 'imaginary_command_to_check_memory_allocation': 1, 'image': 8, 'restart': 3, 'info': 2, 'x/s': 8, 'fr': 1, 
-	 'next': 1, 'backtrace': 1, 'target': 1}
+	 'next': 1, 'backtrace': 1, 'target': 1},
+	{'frame': 200, 'memory': 3, 'breakpoint': 4, 'process': 3, 'bt': 2, 'continue': 1},
 ]
 
 sub_commands_list = [
+	{'frame variable': 535, 'frame select': 301, 'break set': 2, 'breakpoint set': 2, 'thread list': 12, 
+	 'thread backtrace': 8, 'log show': 3, 'thread select': 1, 'register read': 6, 'memory read': 84, 
+	 'frame info': 3, 'thread step-in': 1, 'process continue': 1, 'settings set': 1, 'settings show': 1, 
+	 'image lookup': 2, 'memory info': 3, 'process launch': 7, 'image list': 6, 'info frame': 2, 'thread info': 1, 
+	 'fr v': 1, 'process save-core': 2, 'process kill': 5, 'target modules': 1},
 	{'frame select': 124, 'frame variable': 76, 'memory history': 1, 'breakpoint set': 4, 'process continue': 3, 'memory read': 2},
-	{'frame variable': 535, 'expr data': 5, 'expr &dataBadBuffer': 7, 'expr &dataGoodBuffer': 7, 'frame select': 301, 
-	 'break set': 2, 'breakpoint set': 2, 'thread list': 12, 'thread backtrace': 8, 'log show': 3, 
-	 'print *source@100': 2, 'print sizeof(dataBadBuffer)': 3, 'print *source': 2, 'print source': 2, 
-	 'expr *intPointer': 1, 'thread select': 1, 'register read': 6, 'memory read': 84, 'expr sizeof(data)': 1, 
-	 'p sizeof(data)': 1, 'p (int)sizeof(*data)': 1, 'frame info': 3, 'expr &data': 2, 'p strlen(data)*sizeof(char)': 2, 
-	 'p 100*sizeof(char)': 1, 'p strlen(data)': 3, 'p &data': 2, 'p &dest': 1, 'disassemble __memmove_chk': 1, 
-	 'print data': 1, 'thread step-in': 1, 'process continue': 1, 'expression structCharVoid': 1, 'settings set': 1, 
-	 'settings show': 1, 'expr *data': 1, 'p *data': 1, 'image lookup': 2, 'memory info': 3, 'process launch': 7, 
-	 'image list': 6, 'info frame': 2, 'disassemble --frame': 3, 'p &source': 1, 'thread info': 1, 'x/s (char': 7, 
-	 'fr v': 1, 'expression *data': 1, 'expr sizeof': 1, 'process save-core': 2, 'process kill': 5, 
-	 'expression data': 1, 'expression (&data)[0]': 1, 'target modules': 1, 'x/s 0x000000010072bf96': 1, 
-	 'disassemble -n': 1}
 ]
 
-# Generate LaTeX table with multiple count columns
-latex_output_multi_count = create_latex_table_ordered_by_sum(main_commands_list, sub_commands_list)
-print(latex_output_multi_count)
+# Generate LaTeX table with the updated data, commands and sub-commands ordered by the sum of their counts
+latex_output_updated_data = create_latex_table_ordered_by_sum(main_commands_list, sub_commands_list)
+print(latex_output_updated_data)
